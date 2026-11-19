@@ -111,6 +111,7 @@ function loadLevel(level) {
     // Generar nuevo laberinto (más grande por nivel)
     const mazeSize = 15 + (level * 5);
     maze = new MazeGenerator(mazeSize);
+    maze.cellSize = CELL_SIZE;
 
     addLights(mazeSize);
     const wallTex = makeTex('wall'); wallTex.repeat.set(2, 1);
@@ -258,6 +259,11 @@ function setupControls() {
 }
 
 // --- LÓGICA DEL JUEGO ---
+const PLAYER_R = 1.0;
+function blocked(x, z) {
+    return maze.isWall(x - PLAYER_R, z - PLAYER_R) || maze.isWall(x + PLAYER_R, z - PLAYER_R) ||
+           maze.isWall(x - PLAYER_R, z + PLAYER_R) || maze.isWall(x + PLAYER_R, z + PLAYER_R);
+}
 function update(dt) {
     if (!isRunning) return;
 
@@ -277,12 +283,12 @@ function update(dt) {
         // Rotar movimiento según la cámara
         const sin = Math.sin(camera.rotation.y);
         const cos = Math.cos(camera.rotation.y);
-        const nextX = player.x + (moveX * cos - moveZ * sin) * speed * dt;
-        const nextZ = player.z + (moveX * sin + moveZ * cos) * speed * dt;
+        const nextX = player.x + (moveX * cos + moveZ * sin) * speed * dt;
+        const nextZ = player.z + (-moveX * sin + moveZ * cos) * speed * dt;
 
         // Colisión con paredes
-        if (!maze.isWall(nextX, player.z)) player.x = nextX;
-        if (!maze.isWall(player.x, nextZ)) player.z = nextZ;
+        if (!blocked(nextX, player.z)) player.x = nextX;
+        if (!blocked(player.x, nextZ)) player.z = nextZ;
 
         // Energía
         if (keys.shift) {
