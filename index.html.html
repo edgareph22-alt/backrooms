@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#000000">
+    <title>Backrooms 3D - Mini Mini.exe</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Lienzo 3D -->
+    <canvas id="game-canvas"></canvas>
+    
+    <!-- Efecto VHS -->
+    <div id="vhs-overlay"></div>
+    <div id="vignette"></div>
+
+    <!-- UI del juego -->
+    <div id="ui">
+        <div id="rec-ui"><div class="rec-dot"></div> REC</div>
+        <div id="battery-ui">BAT <div id="battery"><div id="battery-fill"></div></div></div>
+        <div id="level-ui">NIVEL 1</div>
+        <div id="msg"></div>
+    </div>
+
+    <!-- Controles táctiles -->
+    <div id="controls">
+        <div id="joy">
+            <div id="joyKnob"></div>
+        </div>
+        <div id="sprintBtn">CORRER</div>
+    </div>
+
+    <!-- Pantalla de inicio -->
+    <div id="startScreen">
+        <h1>MINI MINI.EXE</h1>
+        <p>Encuentra las 3 cintas VHS.<br>Si ves al payaso, MÍRALO FIJAMENTE.</p>
+        <button id="startBtn">JUGAR</button>
+    </div>
+
+    <!-- Importar Three.js desde CDN -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+    <!-- Nuestros scripts modulares -->
+    <script type="module" src="game.js"></script>
+</body>
+</html>
