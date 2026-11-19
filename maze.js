@@ -50,6 +50,7 @@ export class MazeGenerator {
     }
 
     isWall(x, y) {
+        const s = this.cellSize || 1; x /= s; y /= s;
         if (x < 0 || x >= this.size || y < 0 || y >= this.size) return true;
         return this.grid[Math.floor(y)][Math.floor(x)] === 1;
     }
