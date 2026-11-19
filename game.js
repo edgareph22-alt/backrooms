@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
-// --- CONFIGURACIÓN ---
-const CELL_SIZE = 10;
-const WALL_HEIGHT = 5;
-const WALK_SPEED = 5;
-const SPRINT_SPEED = 8.5;
+const CELL_SIZE = 6; // Celdas más pequeñas para pasillos más definidos
+const WALL_HEIGHT = 4;
+const WALK_SPEED = 6;
+const SPRINT_SPEED = 10;
 
 let currentLevel = 1;
 let maze = null;
@@ -17,60 +16,57 @@ let keys = { w: false, a: false, s: false, d: false, shift: false };
 let tapes = [];
 let exitPos = new THREE.Vector3();
 let isRunning = false;
-let zBuffer = []; // No necesario en Three.js, pero ayuda conceptualmente
 
-// --- INICIALIZACIÓN ---
 function init() {
-    // 1. Configurar Escena
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x221a10); // Fondo oscuro
-    scene.fog = new THREE.FogExp2(0x221a10, 0.05); // Niebla densa para esconder el borde del mapa
+    scene.background = new THREE.Color(0xd4be5a); // Fondo amarillo claro
+    scene.fog = new THREE.Fog(0xd4be5a, 10, 40); // Niebla lineal (lejos)
 
-    // 2. Cámara
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
 
-    // 3. Renderizador
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // 4. Luces (Optimizadas para evitar pantallas negras)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // Ilumina todo
+    // ILUMINACIÓN EXTREMA (Anti-oscuridad)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2.5); // Luz global fuerte
     scene.add(ambientLight);
     
-    const dirLight = new THREE.DirectionalLight(0xfff4c8, 1.0);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
     dirLight.position.set(10, 20, 10);
     scene.add(dirLight);
 
-    // Linterna del jugador
-    const flashlight = new THREE.PointLight(0xfff4c8, 3, 20);
+    const flashlight = new THREE.PointLight(0xffffff, 5, 25); // Linterna pegada al jugador
     camera.add(flashlight);
     scene.add(camera);
 
-    // 5. Generar Nivel
     loadLevel(currentLevel);
-
-    // 6. Event Listeners
     setupControls();
     window.addEventListener('resize', onWindowResize);
 }
 
 function loadLevel(level) {
-    // Limpiar escena anterior
     while(scene.children.length > 0){ 
         scene.remove(scene.children[0]); 
     }
+    // Añadir luces de nuevo porque se borraron al limpiar la escena
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
+    scene.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(10, 20, 10);
+    scene.add(dirLight);
+    camera.add(new THREE.PointLight(0xffffff, 5, 25));
+    scene.add(camera);
 
-    // Generar nuevo laberinto (más grande por nivel)
-    const mazeSize = 15 + (level * 5);
+    // Mapa más chico para que se vea todo
+    const mazeSize = 10 + (level * 2);
     maze = new MazeGenerator(mazeSize);
 
-    const wallMat = new THREE.MeshLambertMaterial({ color: 0xd4be5a }); // Amarillo Backrooms
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x4a3b22 });
-    const ceilMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0xe6d17a }); // Amarillo más claro y brillante
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x8c7a4e }); // Marrón claro
+    const ceilMat = new THREE.MeshLambertMaterial({ color: 0xcccccc }); // Gris claro
 
-    // Crear Suelo y Techo
     const floorGeo = new THREE.PlaneGeometry(mazeSize * CELL_SIZE, mazeSize * CELL_SIZE);
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -82,7 +78,6 @@ function loadLevel(level) {
     ceil.position.set((mazeSize * CELL_SIZE) / 2, WALL_HEIGHT, (mazeSize * CELL_SIZE) / 2);
     scene.add(ceil);
 
-    // Crear Paredes
     for (let y = 0; y < mazeSize; y++) {
         for (let x = 0; x < mazeSize; x++) {
             if (maze.grid[y][x] === 1) {
@@ -93,19 +88,16 @@ function loadLevel(level) {
         }
     }
 
-    // Jugador
     player.x = CELL_SIZE * 1.5;
     player.z = CELL_SIZE * 1.5;
     player.stamina = 100;
 
-    // Crear Monstruo
     monster = new Monster(scene);
     monster.speed = 5.0 + (level * 0.5);
     monster.setPosition((mazeSize - 2) * CELL_SIZE, (mazeSize - 2) * CELL_SIZE);
 
-    // Crear Cintas
     tapes = [];
-    const tapeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const tapeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Rojo brillante
     for (let i = 0; i < 3; i++) {
         let tx, ty;
         do {
@@ -119,9 +111,8 @@ function loadLevel(level) {
         tapes.push({ mesh: tape, taken: false });
     }
 
-    // Salida
     exitPos.set((mazeSize - 2) * CELL_SIZE, 2, (mazeSize - 2) * CELL_SIZE);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+    const door = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 3), new THREE.MeshBasicMaterial({ color: 0x00ff00 })); // Verde brillante
     door.position.copy(exitPos);
     scene.add(door);
 
@@ -129,9 +120,7 @@ function loadLevel(level) {
     showMsg(`NIVEL ${level}: ENCUENTRA 3 CINTAS`, 3000);
 }
 
-// --- CONTROLES ---
 function setupControls() {
-    // Teclado (PC)
     window.addEventListener('keydown', e => {
         if (e.key === 'w' || e.key === 'ArrowUp') keys.w = true;
         if (e.key === 's' || e.key === 'ArrowDown') keys.s = true;
@@ -147,7 +136,6 @@ function setupControls() {
         if (e.key === 'Shift') keys.shift = false;
     });
 
-    // Táctil (iPhone/Android)
     const joy = document.getElementById('joy');
     const joyKnob = document.getElementById('joyKnob');
     let joyId = null, joyCenter = { x: 0, y: 0 };
@@ -166,8 +154,6 @@ function setupControls() {
             const max = 45, mag = Math.hypot(dx, dy);
             if(mag > max) { dx = dx/mag*max; dy = dy/mag*max; }
             joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-            
-            // Simular teclas
             keys.w = dy < -15; keys.s = dy > 15;
             keys.a = dx < -15; keys.d = dx > 15;
         }
@@ -179,12 +165,10 @@ function setupControls() {
         }
     });
 
-    // Sprint táctil
     const sprintBtn = document.getElementById('sprintBtn');
     sprintBtn.addEventListener('touchstart', e => { e.preventDefault(); keys.shift = true; sprintBtn.classList.add('active'); });
     sprintBtn.addEventListener('touchend', e => { e.preventDefault(); keys.shift = false; sprintBtn.classList.remove('active'); });
 
-    // Mirar con el dedo (Swipe)
     let lookId = null, lastX = 0;
     renderer.domElement.addEventListener('touchstart', e => {
         e.preventDefault(); const t = e.changedTouches[0];
@@ -204,11 +188,9 @@ function setupControls() {
     });
 }
 
-// --- LÓGICA DEL JUEGO ---
 function update(dt) {
     if (!isRunning) return;
 
-    // Movimiento del jugador
     let moveX = 0, moveZ = 0;
     const speed = keys.shift && !player.exhausted ? SPRINT_SPEED : WALK_SPEED;
 
@@ -221,17 +203,14 @@ function update(dt) {
         const length = Math.hypot(moveX, moveZ);
         moveX /= length; moveZ /= length;
 
-        // Rotar movimiento según la cámara
         const sin = Math.sin(camera.rotation.y);
         const cos = Math.cos(camera.rotation.y);
         const nextX = player.x + (moveX * cos - moveZ * sin) * speed * dt;
         const nextZ = player.z + (moveX * sin + moveZ * cos) * speed * dt;
 
-        // Colisión con paredes
         if (!maze.isWall(nextX, player.z)) player.x = nextX;
         if (!maze.isWall(player.x, nextZ)) player.z = nextZ;
 
-        // Energía
         if (keys.shift) {
             player.stamina = Math.max(0, player.stamina - 20 * dt);
             if (player.stamina === 0) player.exhausted = true;
@@ -241,27 +220,21 @@ function update(dt) {
         }
     }
 
-    // Actualizar cámara
-    camera.position.set(player.x, 2, player.z);
+    camera.position.set(player.x, 1.5, player.z); // Altura de los ojos
 
-    // Actualizar UI
     document.getElementById('battery-fill').style.width = player.stamina + '%';
     document.getElementById('battery-fill').style.background = player.exhausted ? '#ff0000' : '#fff';
 
-    // Actualizar Monstruo
     const dir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camera.rotation.y);
     monster.update(dt, camera.position, dir, maze);
 
-    // Distancia al monstruo
     const distToMonster = Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z);
     if (distToMonster < 2) {
-        // Atrapado
         player.x = CELL_SIZE * 1.5;
         player.z = CELL_SIZE * 1.5;
         showMsg('MINI MINI.EXE TE ATRAPÓ', 2000);
     }
 
-    // Recolectar cintas
     tapes.forEach(t => {
         if (!t.taken) {
             const d = Math.hypot(player.x - t.mesh.position.x, player.z - t.mesh.position.z);
@@ -273,7 +246,6 @@ function update(dt) {
         }
     });
 
-    // Llegar a la salida
     const distToExit = Math.hypot(player.x - exitPos.x, player.z - exitPos.z);
     if (distToExit < 3 && tapes.every(t => t.taken)) {
         currentLevel++;
@@ -281,13 +253,11 @@ function update(dt) {
     }
 }
 
-// --- BUCLE DE RENDERIZADO ---
 let lastTime = 0;
 function animate(time) {
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, (time - lastTime) / 1000);
     lastTime = time;
-
     update(dt);
     renderer.render(scene, camera);
 }
@@ -305,7 +275,6 @@ function showMsg(txt, ms) {
     msgTimer = setTimeout(() => m.classList.remove('show'), ms);
 }
 
-// --- INICIO ---
 document.getElementById('startBtn').addEventListener('click', () => {
     document.getElementById('startScreen').style.display = 'none';
     isRunning = true;
