@@ -1,7 +1,6 @@
 export class MazeGenerator {
-    constructor(size, style = 'backrooms') {
+    constructor(size) {
         this.size = size;
-        this.style = style;
         this.grid = [];
         this.generate();
     }
@@ -20,13 +19,15 @@ export class MazeGenerator {
             ];
 
             const valid = dirs.filter(d => {
-                const nx = current.x + d.dx, ny = current.y + d.dy;
+                const nx = current.x + d.dx;
+                const ny = current.y + d.dy;
                 return nx > 0 && nx < this.size - 1 && ny > 0 && ny < this.size - 1 && this.grid[ny][nx] === 1;
             });
 
             if (valid.length > 0) {
                 const next = valid[Math.floor(Math.random() * valid.length)];
-                const nx = current.x + next.dx, ny = current.y + next.dy;
+                const nx = current.x + next.dx;
+                const ny = current.y + next.dy;
                 
                 this.grid[ny][nx] = 0;
                 this.grid[current.y + next.dy / 2][current.x + next.dx / 2] = 0;
@@ -36,9 +37,8 @@ export class MazeGenerator {
             }
         }
 
-        // Menos abierto para que no se sienta "despejado"
-        const openness = this.style === 'forest' ? this.size * 2.8 : this.size * 1.4;
-        for (let i = 0; i < openness; i++) {
+        // Un poco más abierto pero no demasiado
+        for (let i = 0; i < this.size * 1.6; i++) {
             const x = 1 + Math.floor(Math.random() * (this.size - 2));
             const y = 1 + Math.floor(Math.random() * (this.size - 2));
             this.grid[y][x] = 0;
@@ -48,26 +48,12 @@ export class MazeGenerator {
         this.grid[this.size - 2][this.size - 2] = 0;
         this.grid[this.size - 3][this.size - 2] = 0;
         this.grid[this.size - 2][this.size - 3] = 0;
-
-        if (this.style === 'forest') {
-            for (let i = 0; i < 5; i++) {
-                const cx = 2 + Math.floor(Math.random() * (this.size - 4));
-                const cy = 2 + Math.floor(Math.random() * (this.size - 4));
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        const nx = cx + dx, ny = cy + dy;
-                        if (nx > 0 && nx < this.size - 1 && ny > 0 && ny < this.size - 1) {
-                            this.grid[ny][nx] = 0;
-                        }
-                    }
-                }
-            }
-        }
     }
 
-    isWall(x, y) {
+    // x, z son coordenadas de MUNDO
+    isWall(x, z) {
         const cx = Math.floor(x / 10);
-        const cy = Math.floor(y / 10);
+        const cy = Math.floor(z / 10);
         if (cx < 0 || cx >= this.size || cy < 0 || cy >= this.size) return true;
         return this.grid[cy][cx] === 1;
     }
