@@ -36,7 +36,8 @@ export class MazeGenerator {
             }
         }
 
-        const openness = this.style === 'forest' ? this.size * 3.5 : this.size * 2.2;
+        // Menos abierto para que no se sienta "despejado"
+        const openness = this.style === 'forest' ? this.size * 2.8 : this.size * 1.4;
         for (let i = 0; i < openness; i++) {
             const x = 1 + Math.floor(Math.random() * (this.size - 2));
             const y = 1 + Math.floor(Math.random() * (this.size - 2));
@@ -49,7 +50,7 @@ export class MazeGenerator {
         this.grid[this.size - 2][this.size - 3] = 0;
 
         if (this.style === 'forest') {
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < 5; i++) {
                 const cx = 2 + Math.floor(Math.random() * (this.size - 4));
                 const cy = 2 + Math.floor(Math.random() * (this.size - 4));
                 for (let dy = -1; dy <= 1; dy++) {

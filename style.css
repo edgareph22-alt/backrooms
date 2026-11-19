@@ -2,56 +2,45 @@
 body { overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
 canvas { display: block; width: 100vw; height: 100vh; }
 
+/* Efecto VHS (Líneas y ruido) */
 #vhs-overlay {
     position: fixed; inset: 0; pointer-events: none; z-index: 5;
-    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%), 
-                linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.04));
-    background-size: 100% 3px, 3px 100%;
-    opacity: 0.55;
-    animation: vhs-flicker 0.15s infinite;
-}
-@keyframes vhs-flicker {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 0.62; }
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.12) 50%), 
+                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 255, 0, 0.06));
+    background-size: 100% 3px, 4px 100%;
+    opacity: 0.6;
 }
 
+/* Viñeta oscura (Bordes negros) */
 #vignette {
     position: fixed; inset: 0; pointer-events: none; z-index: 6;
-    background: radial-gradient(circle, rgba(0,0,0,0) 50%, rgba(0,0,0,0.6) 100%);
-    box-shadow: inset 0 0 80px rgba(0,0,0,0.7);
+    background: radial-gradient(circle, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%);
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.6);
 }
 
+/* Interfaz */
 #ui { position: fixed; inset: 0; pointer-events: none; color: #fff; font-weight: bold; text-shadow: 0 2px 4px #000; z-index: 10; }
 #rec-ui { position: absolute; top: 20px; left: 30px; display: flex; align-items: center; font-size: 16px; letter-spacing: 2px; }
 .rec-dot { width: 12px; height: 12px; background: #ff0000; border-radius: 50%; margin-right: 10px; animation: blink 1s infinite; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
 #battery-ui { position: absolute; top: 20px; right: 30px; font-size: 16px; display: flex; align-items: center; }
-#battery { width: 28px; height: 13px; border: 2px solid #fff; margin-left: 8px; position: relative; }
-#battery::after { content: ''; position: absolute; right: -5px; top: 3px; width: 3px; height: 5px; background: #fff; }
-#battery-fill { height: 100%; background: #fff; width: 100%; transition: width 0.2s, background 0.3s; }
+#battery { width: 24px; height: 12px; border: 2px solid #fff; margin-left: 8px; }
+#battery-fill { height: 100%; background: #fff; width: 100%; transition: width 0.2s; }
 
-#level-ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 16px; color: #ffd23f; letter-spacing: 1px; text-align: center; }
-#msg { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); padding: 12px 22px; font-size: 15px; text-align: center; opacity: 0; transition: opacity 0.3s; border-left: 3px solid #ff0000; max-width: 90vw; line-height: 1.45; }
+#level-ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 18px; color: #ffd23f; }
+#msg { position: absolute; top: 25%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 10px 20px; font-size: 15px; text-align: center; opacity: 0; transition: opacity 0.3s; border-left: 3px solid #ff0000; }
 #msg.show { opacity: 1; }
 
-#hint {
-    position: absolute; bottom: 55px; left: 50%; transform: translateX(-50%);
-    font-size: 11px; color: #aaa; letter-spacing: 0.5px; opacity: 0.7;
-}
-
+/* Controles */
 #joy { position: absolute; left: 30px; bottom: 40px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); pointer-events: auto; touch-action: none; z-index: 20; }
 #joyKnob { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.5); }
 #sprintBtn { position: absolute; right: 30px; bottom: 40px; width: 90px; height: 90px; border-radius: 50%; background: rgba(255,0,0,0.2); border: 2px solid rgba(255,0,0,0.6); color: #fff; font-size: 12px; pointer-events: auto; touch-action: none; display: flex; align-items: center; justify-content: center; z-index: 20; font-weight: bold; }
 #sprintBtn.active { background: rgba(255,0,0,0.7); }
 
+/* Inicio */
 #startScreen { position: fixed; inset: 0; background: #050505; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; text-align: center; padding: 24px; z-index: 50; }
-#startScreen h1 { font-size: 28px; margin-bottom: 20px; color: #ff0000; letter-spacing: 4px; text-shadow: 0 0 20px rgba(255,0,0,0.4); }
-#startScreen p { font-size: 14px; line-height: 1.65; max-width: 420px; margin-bottom: 28px; color: #ccc; }
-#startBtn { background: transparent; color: #fff; border: 2px solid #fff; padding: 14px 40px; font-size: 16px; cursor: pointer; letter-spacing: 2px; transition: all 0.2s; }
-#startBtn:hover, #startBtn:active { background: #fff; color: #000; }
-
-@media (max-width: 600px) {
-    #hint { display: none; }
-    #level-ui { font-size: 13px; bottom: 18px; }
-}
+#startScreen h1 { font-size: 28px; margin-bottom: 20px; color: #ff0000; letter-spacing: 4px; }
+#startScreen p { font-size: 15px; line-height: 1.6; max-width: 400px; margin-bottom: 30px; color: #ccc; }
+#startBtn { background: transparent; color: #fff; border: 2px solid #fff; padding: 14px 40px; font-size: 16px; cursor: pointer; }
+#startBtn:active { background: #fff; color: #000; }
