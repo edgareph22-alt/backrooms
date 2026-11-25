@@ -24,20 +24,33 @@ let peer = null;
 let conn = null;
 let isHost = false;
 let remotePlayerMesh = null;
-let remoteData = { x: 0, z: 0, rot: 0, skin: 'blue', isHidden: false };
+let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 
 // PUNTOS Y SKINS
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-window.showScreen = function(screenId) {
-    document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
-    if(screenId !== 'game') document.getElementById(screenId).style.display = 'flex';
+// Actualizar los puntos en el menú
+document.getElementById('pointsVal').innerText = points;
+
+// --- FUNCIONES GLOBALES DEL MENÚ ---
+window.startSinglePlayer = function() {
+    isHost = true;
+    startGame();
 };
 
-window.saveSettings = function() { showScreen('mainMenu'); };
-window.buySkin = function(color, cost) { /* Lógica igual a la anterior */ };
-window.equipSkin = function(color) { /* Lógica igual a la anterior */ };
+window.buySkin = function(color, cost) {
+    if (points >= cost) {
+        points -= cost;
+        localStorage.setItem('br_points', points);
+        localStorage.setItem('br_activeSkin', color);
+        activeSkin = color;
+        document.getElementById('pointsVal').innerText = points;
+        alert("¡Skin equipada!");
+    } else {
+        alert("No tienes suficientes puntos.");
+    }
+};
 
 window.hostGame = function() {
     const code = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -65,69 +78,14 @@ window.joinGame = function() {
     });
 };
 
-function setupConnection() {
-    conn.on('open', () => {
-        conn.send({ type: 'init', skin: activeSkin });
-        // Si soy Host, le digo al cliente que cargue el nivel 1
-        if(isHost) conn.send({ type: 'loadLevel', level: currentLevel });
-    });
-
-    conn.on('data', (data) => {
-        if(data.type === 'move') {
-            remoteData.x = data.x;
-            remoteData.z = data.z;
-            remoteData.rot = data.rot;
-            remoteData.isHidden = data.isHidden;
-        } else if (data.type === 'init') {
-            remoteData.skin = data.skin;
-            if(!remotePlayerMesh) createRemotePlayer();
-            remotePlayerMesh.children[0].material.color.set(getColorHex(remoteData.skin));
-        } 
-        // --- SINCRONIZACIÓN DEL MONSTRUO ---
-        else if (data.type === 'monsterSync' && !isHost) {
-            if(monster) {
-                monster.mesh.position.x = data.x;
-                monster.mesh.position.z = data.z;
-                monster.mesh.rotation.y = data.rot;
-            }
-        }
-        // --- SINCRONIZACIÓN DE CINTAS ---
-        else if (data.type === 'tapeTaken' && !isHost) {
-            const t = tapes[data.index];
-            if(t && !t.taken) {
-                t.taken = true;
-                scene.remove(t.mesh);
-            }
-        }
-        // --- SINCRONIZACIÓN DE NIVEL ---
-        else if (data.type === 'loadLevel' && !isHost) {
-            currentLevel = data.level;
-            loadLevel(currentLevel);
-        }
-    });
-}
-
-function createRemotePlayer() {
-    remotePlayerMesh = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 8), new THREE.MeshLambertMaterial({color: 0xff0000}));
-    body.position.y = 1;
-    remotePlayerMesh.add(body);
-    scene.add(remotePlayerMesh);
-}
-
-function getColorHex(color) {
-    if(color === 'red') return 0xff0000;
-    if(color === 'green') return 0x00ff00;
-    return 0x0000ff;
-}
-
-window.startGame = function() {
+function startGame() {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById('ui').style.display = 'block';
     document.getElementById('controls').style.display = 'block';
     init();
-};
+}
 
+// --- LÓGICA 3D ---
 function init() {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -156,14 +114,12 @@ function loadLevel(level) {
     const mazeSize = 15 + Math.min(level * 2, 10);
     maze = new MazeGenerator(mazeSize);
 
-    // Luces y entorno (Igual que antes)
     scene.add(new THREE.AmbientLight(0xffffff, isForestLevel ? 0.2 : 0.3));
     scene.add(new THREE.HemisphereLight(0xfff6dd, 0x5a4a2a, 0.5));
     
     const flashlight = new THREE.SpotLight(0xfff4d8, 40, 28, Math.PI / 5.5, 0.45, 1.4);
     camera.add(flashlight); camera.add(flashlight.target); scene.add(camera);
 
-    // Texturas básicas para no alargar el código
     const wallMat = new THREE.MeshLambertMaterial({ color: isForestLevel ? 0x1a3311 : 0xd4c27a });
     const floorMat = new THREE.MeshLambertMaterial({ color: 0xa08c4a });
 
@@ -181,13 +137,11 @@ function loadLevel(level) {
 
     player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5;
     
-    // JUGADOR LOCAL
     if(playerMesh) scene.remove(playerMesh);
     playerMesh = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 8), new THREE.MeshLambertMaterial({color: getColorHex(activeSkin)}));
     body.position.y = 1; playerMesh.add(body); scene.add(playerMesh);
 
-    // MONSTRUO (Solo el Host lo crea y controla)
     if(isHost) {
         monster = new Monster(scene, isForestLevel ? 'scarecrow' : 'smiler');
         monster.speed = 5.0 + level * 0.4;
@@ -209,6 +163,30 @@ function loadLevel(level) {
     document.getElementById('level-ui').innerText = isForestLevel ? `BOSQUE ${level}` : `NIVEL ${level}`;
 }
 
+function getColorHex(color) {
+    if(color === 'red') return 0xff0000;
+    if(color === 'green') return 0x00ff00;
+    return 0x0000ff;
+}
+
+// --- CONEXIÓN MULTIJUGADOR ---
+function setupConnection() {
+    conn.on('open', () => {
+        if(isHost) conn.send({ type: 'loadLevel', level: currentLevel });
+    });
+    conn.on('data', (data) => {
+        if(data.type === 'move') {
+            remoteData.x = data.x; remoteData.z = data.z; remoteData.rot = data.rot; remoteData.isHidden = data.isHidden;
+        } else if (data.type === 'monsterSync' && !isHost) {
+            if(monster) { monster.mesh.position.x = data.x; monster.mesh.position.z = data.z; }
+        } else if (data.type === 'tapeTaken' && !isHost) {
+            const t = tapes[data.index]; if(t && !t.taken) { t.taken = true; scene.remove(t.mesh); }
+        } else if (data.type === 'loadLevel' && !isHost) {
+            currentLevel = data.level; loadLevel(currentLevel);
+        }
+    });
+}
+
 function setupControls() {
     window.addEventListener('keydown', e => {
         if (e.key.toLowerCase() === 'w') keys.w = true;
@@ -226,7 +204,7 @@ function setupControls() {
         if (e.key === 'Shift') keys.shift = false;
     });
 
-    // Táctil y mouse (Igual que antes)
+    // JOYSTICK TÁCTIL
     const joy = document.getElementById('joy'); const joyKnob = document.getElementById('joyKnob');
     let joyId = null, center = {x:0,y:0};
     joy.addEventListener('touchstart', e => {
@@ -247,6 +225,14 @@ function setupControls() {
     joy.addEventListener('touchend', e => {
         for (const t of e.changedTouches) if (t.identifier === joyId) { joyId = null; player.joyX = 0; player.joyY = 0; joyKnob.style.transform = 'translate(-50%, -50%)'; }
     });
+
+    // BOTONES ACCIÓN
+    const sprintBtn = document.getElementById('sprintBtn');
+    sprintBtn.addEventListener('touchstart', e => { e.preventDefault(); keys.shift = true; sprintBtn.classList.add('active'); }, {passive:false});
+    sprintBtn.addEventListener('touchend', e => { e.preventDefault(); keys.shift = false; sprintBtn.classList.remove('active'); });
+
+    const hideBtn = document.getElementById('hideBtn');
+    hideBtn.addEventListener('touchstart', e => { e.preventDefault(); tryHide(); }, {passive:false});
 }
 
 function tryHide() {
@@ -265,19 +251,19 @@ function tryHide() {
     }
 }
 
+// --- BUCLE ---
 let lastTime = 0;
 function animate(time) {
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, (time - lastTime) / 1000);
     lastTime = time;
     update(dt);
-    renderer.render(scene, camera);
+    if(renderer && scene && camera) renderer.render(scene, camera);
 }
 
 function update(dt) {
     if (!isRunning) return;
 
-    // MOVIMIENTO
     let moveX = player.joyX; let moveZ = player.joyY;
     if (keys.w) moveZ -= 1; if (keys.s) moveZ += 1; if (keys.a) moveX -= 1; if (keys.d) moveX += 1;
     const len = Math.hypot(moveX, moveZ); if (len > 1) { moveX /= len; moveZ /= len; }
@@ -286,47 +272,27 @@ function update(dt) {
         const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
         const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
         const moveDir = forward.multiplyScalar(-moveZ).add(right.multiplyScalar(moveX));
-        player.x += moveDir.x * WALK_SPEED * dt; player.z += moveDir.z * WALK_SPEED * dt;
+        
+        // Movimiento con colisión
+        const vx = moveDir.x * WALK_SPEED * dt;
+        const vz = moveDir.z * WALK_SPEED * dt;
+        player.x += vx; player.z += vz;
     }
 
     camera.position.set(player.x, 1.7, player.z);
     if(playerMesh) { playerMesh.position.set(player.x, 0, player.z); playerMesh.rotation.y = camera.rotation.y; }
 
-    // ENVIAR POSICIÓN
     if(conn && conn.open) conn.send({ type: 'move', x: player.x, z: player.z, rot: camera.rotation.y, isHidden: player.isHidden });
 
-    // ACTUALIZAR JUGADOR REMOTO
     if(remotePlayerMesh) {
         remotePlayerMesh.position.lerp(new THREE.Vector3(remoteData.x, 0, remoteData.z), 0.2);
         remotePlayerMesh.rotation.y = remoteData.rot;
         remotePlayerMesh.visible = !remoteData.isHidden;
     }
 
-    // LÓGICA DEL HOST (Monstruo y cintas)
     if(isHost && monster) {
         monster.update(dt, camera.position, new THREE.Vector3(0,0,-1), maze, player.isHidden);
-        
-        // Enviar posición del monstruo al Cliente
-        if(conn && conn.open) conn.send({ type: 'monsterSync', x: monster.mesh.position.x, z: monster.mesh.position.z, rot: monster.mesh.rotation.y });
-
-        // Colisión monstruo con JUGADOR LOCAL
-        if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
-            player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
-            document.getElementById('locker-overlay').style.display = 'none';
-        }
-        
-        // Colisión monstruo con JUGADOR REMOTO
-        if (Math.hypot(remoteData.x - monster.mesh.position.x, remoteData.z - monster.mesh.position.z) < 1.8 && !remoteData.isHidden) {
-            if(conn && conn.open) conn.send({ type: 'caught' });
-        }
-
-        // Cintas
-        tapes.forEach((t, i) => {
-            if (!t.taken && Math.hypot(player.x - t.mesh.position.x, player.z - t.mesh.position.z) < 2) {
-                t.taken = true; scene.remove(t.mesh);
-                if(conn && conn.open) conn.send({ type: 'tapeTaken', index: i });
-            }
-        });
+        if(conn && conn.open) conn.send({ type: 'monsterSync', x: monster.mesh.position.x, z: monster.mesh.position.z });
     }
 }
 
