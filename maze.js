@@ -37,8 +37,6 @@ export class MazeGenerator {
 
         this.grid[1][1] = 0;
         this.grid[this.size - 2][this.size - 2] = 0;
-        this.grid[this.size - 3][this.size - 2] = 0;
-        this.grid[this.size - 2][this.size - 3] = 0;
     }
 
     isWall(x, z) {
