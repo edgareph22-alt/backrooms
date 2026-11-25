@@ -43,14 +43,28 @@
     <!-- MULTIJUGADOR -->
     <div id="multiplayerMenu" class="screen" style="display:none;">
         <h2>MULTIJUGADOR</h2>
-        <button class="menuBtn" onclick="hostGame()">CREAR SALA</button>
-        <div id="hostCodeContainer" style="display:none; margin: 20px 0;">
-            <p>Pásale este código a tus amigos:</p>
-            <h1 id="hostCodeDisplay" style="color: #ffd23f; font-size: 40px; letter-spacing: 5px;"></h1>
+        
+        <!-- Controles de Host -->
+        <div id="hostSection">
+            <button class="menuBtn" id="createRoomBtn" onclick="hostGame()">CREAR SALA</button>
+            <p id="hostStatus" style="color:#ffd23f; margin-top:10px; display:none;">Conectando al servidor...</p>
+            
+            <div id="hostCodeContainer" style="display:none; margin: 20px 0; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;">
+                <p>Pásale este código a tus amigos:</p>
+                <h1 id="hostCodeDisplay" style="color: #ffd23f; font-size: 40px; letter-spacing: 5px;">----</h1>
+                <button class="menuBtn" style="background: #00ff55; color: #000; margin-top: 15px;" onclick="startHostGame()">EMPEZAR JUEGO</button>
+            </div>
         </div>
-        <p>O únete a una:</p>
-        <input type="text" id="joinCodeInput" placeholder="CÓDIGO" maxlength="4" style="text-transform: uppercase;">
-        <button class="menuBtn" onclick="joinGame()">UNIRSE</button>
+
+        <hr style="width: 80%; border-color: #333; margin: 20px 0;">
+
+        <!-- Controles de Cliente -->
+        <div id="clientSection">
+            <p>O únete a una:</p>
+            <input type="text" id="joinCodeInput" placeholder="CÓDIGO" maxlength="4" style="text-transform: uppercase;">
+            <button class="menuBtn" onclick="joinGame()">UNIRSE</button>
+        </div>
+
         <button class="menuBtn" style="background: transparent; border: none; color: #aaa; margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
@@ -88,7 +102,6 @@
         <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
-    <!-- Usamos la versión online para asegurar que cargue rápido -->
     <script type="importmap">
         { "imports": { 
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -96,7 +109,6 @@
         } }
     </script>
     
-    <!-- Funciones de UI globales (para que los botones funcionen siempre) -->
     <script>
         function showScreen(id) {
             document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
