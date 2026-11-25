@@ -30,10 +30,9 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-// Actualizar los puntos en el menú
 document.getElementById('pointsVal').innerText = points;
 
-// --- FUNCIONES GLOBALES DEL MENÚ ---
+// --- FUNCIONES GLOBALES ---
 window.startSinglePlayer = function() {
     isHost = true;
     startGame();
@@ -90,6 +89,7 @@ function init() {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
+    
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -102,6 +102,50 @@ function init() {
     animate(performance.now());
 }
 
+// --- COLISIONES ---
+function collides(x, z, radius = PLAYER_RADIUS) {
+    const checks = [[0,0],[radius,0],[-radius,0],[0,radius],[0,-radius],[radius*0.7,radius*0.7],[radius*0.7,-radius*0.7],[-radius*0.7,radius*0.7],[-radius*0.7,-radius*0.7]];
+    for (const [ox, oz] of checks) if (maze.isWall(x + ox, z + oz)) return true;
+    return false;
+}
+
+// --- CASILLEROS ---
+function addHideSpots(mazeSize, isForest) {
+    hideSpots = [];
+    let placed = 0;
+    for (let i = 0; i < 40 && placed < 8; i++) {
+        const tx = 2 + Math.floor(Math.random() * (mazeSize - 4));
+        const ty = 2 + Math.floor(Math.random() * (mazeSize - 4));
+        if (maze.grid[ty][tx] === 1 || (tx < 3 && ty < 3)) continue;
+
+        const group = new THREE.Group();
+        const wx = tx * CELL_SIZE + CELL_SIZE / 2;
+        const wz = ty * CELL_SIZE + CELL_SIZE / 2;
+        group.position.set(wx, 0, wz);
+        group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+
+        if (!isForest) {
+            const metalMat = new THREE.MeshStandardMaterial({ color: 0x6a7078, roughness: 0.4, metalness: 0.8 });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x2e3238, roughness: 0.5 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.8, 0.9), metalMat);
+            body.position.y = 1.9; group.add(body);
+            const seam = new THREE.Mesh(new THREE.BoxGeometry(0.05, 3.6, 0.03), darkMat); seam.position.set(0, 1.9, 0.47); group.add(seam);
+            const hL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.14), darkMat); hL.position.set(-0.38, 2.0, 0.52); group.add(hL);
+            const hR = hL.clone(); hR.position.x = 0.38; group.add(hR);
+        } else {
+            const hayMat = new THREE.MeshStandardMaterial({ color: 0xd4a72c, roughness: 1 });
+            const ropeMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 1 });
+            const hay = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 1.8, 8), hayMat); hay.rotation.z = Math.PI / 2; hay.position.y = 1.2; group.add(hay);
+            const rope1 = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.05, 4, 16), ropeMat); rope1.position.set(-0.5, 1.2, 0); rope1.rotation.y = Math.PI / 2; group.add(rope1);
+            const rope2 = rope1.clone(); rope2.position.x = 0.5; group.add(rope2);
+        }
+        scene.add(group);
+        hideSpots.push({ x: wx, z: wz, radius: 2.1 });
+        placed++;
+    }
+}
+
+// --- CARGAR NIVEL ---
 function loadLevel(level) {
     while (scene.children.length > 0) scene.remove(scene.children[0]);
     hideSpots = []; tapes = [];
@@ -160,6 +204,8 @@ function loadLevel(level) {
     exitPos.set((mazeSize - 2) * CELL_SIZE, 2, (mazeSize - 2) * CELL_SIZE);
     const door = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), new THREE.MeshBasicMaterial({ color: 0x00ff55 })); door.position.copy(exitPos); scene.add(door);
 
+    addHideSpots(mazeSize, isForestLevel);
+    
     document.getElementById('level-ui').innerText = isForestLevel ? `BOSQUE ${level}` : `NIVEL ${level}`;
 }
 
@@ -169,7 +215,7 @@ function getColorHex(color) {
     return 0x0000ff;
 }
 
-// --- CONEXIÓN MULTIJUGADOR ---
+// --- MULTIJUGADOR SINCRO ---
 function setupConnection() {
     conn.on('open', () => {
         if(isHost) conn.send({ type: 'loadLevel', level: currentLevel });
@@ -187,6 +233,7 @@ function setupConnection() {
     });
 }
 
+// --- CONTROLES ---
 function setupControls() {
     window.addEventListener('keydown', e => {
         if (e.key.toLowerCase() === 'w') keys.w = true;
@@ -204,7 +251,6 @@ function setupControls() {
         if (e.key === 'Shift') keys.shift = false;
     });
 
-    // JOYSTICK TÁCTIL
     const joy = document.getElementById('joy'); const joyKnob = document.getElementById('joyKnob');
     let joyId = null, center = {x:0,y:0};
     joy.addEventListener('touchstart', e => {
@@ -226,7 +272,6 @@ function setupControls() {
         for (const t of e.changedTouches) if (t.identifier === joyId) { joyId = null; player.joyX = 0; player.joyY = 0; joyKnob.style.transform = 'translate(-50%, -50%)'; }
     });
 
-    // BOTONES ACCIÓN
     const sprintBtn = document.getElementById('sprintBtn');
     sprintBtn.addEventListener('touchstart', e => { e.preventDefault(); keys.shift = true; sprintBtn.classList.add('active'); }, {passive:false});
     sprintBtn.addEventListener('touchend', e => { e.preventDefault(); keys.shift = false; sprintBtn.classList.remove('active'); });
@@ -273,10 +318,11 @@ function update(dt) {
         const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
         const moveDir = forward.multiplyScalar(-moveZ).add(right.multiplyScalar(moveX));
         
-        // Movimiento con colisión
+        // COLISIONES
         const vx = moveDir.x * WALK_SPEED * dt;
         const vz = moveDir.z * WALK_SPEED * dt;
-        player.x += vx; player.z += vz;
+        if (!collides(player.x + vx, player.z)) player.x += vx;
+        if (!collides(player.x, player.z + vz)) player.z += vz;
     }
 
     camera.position.set(player.x, 1.7, player.z);
