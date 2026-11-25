@@ -7,6 +7,9 @@
     <meta name="theme-color" content="#000000">
     <title>Backrooms - Multijugador</title>
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Cargamos PeerJS de forma global ANTES del juego -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
     <canvas id="game-canvas"></canvas>
@@ -44,7 +47,6 @@
     <div id="multiplayerMenu" class="screen" style="display:none;">
         <h2>MULTIJUGADOR</h2>
         
-        <!-- Controles de Host -->
         <div id="hostSection">
             <button class="menuBtn" id="createRoomBtn" onclick="hostGame()">CREAR SALA</button>
             <p id="hostStatus" style="color:#ffd23f; margin-top:10px; display:none;">Conectando al servidor...</p>
@@ -58,7 +60,6 @@
 
         <hr style="width: 80%; border-color: #333; margin: 20px 0;">
 
-        <!-- Controles de Cliente -->
         <div id="clientSection">
             <p>O únete a una:</p>
             <input type="text" id="joinCodeInput" placeholder="CÓDIGO" maxlength="4" style="text-transform: uppercase;">
@@ -104,8 +105,7 @@
 
     <script type="importmap">
         { "imports": { 
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "peerjs": "https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
         } }
     </script>
     
