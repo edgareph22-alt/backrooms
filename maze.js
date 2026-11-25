@@ -1,8 +1,12 @@
 export class MazeGenerator {
-    constructor(size) {
+    constructor(size, customGrid = null) {
         this.size = size;
-        this.grid = [];
-        this.generate();
+        if (customGrid) {
+            this.grid = customGrid;
+        } else {
+            this.grid = [];
+            this.generate();
+        }
     }
 
     generate() {
