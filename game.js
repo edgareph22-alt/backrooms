@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
-console.log("VERSION 4 - Multijugador Sincronizado");
+console.log("VERSION 5 - Cintas realistas y audio");
 
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
@@ -26,7 +26,7 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-// --- AUDIO INDEPENDIENTE POR DISPOSITIVO ---
+// --- AUDIO INDEPENDIENTE ---
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 let heartbeatOsc = null;
@@ -111,7 +111,6 @@ window.hostGame = function() {
 window.startHostGame = function() {
     initAudio();
     startGame();
-    // Enviar el mapa actual al cliente
     if(conn && conn.open) conn.send({ type: 'syncLevel', level: currentLevel, grid: maze.grid });
 };
 
@@ -182,7 +181,6 @@ function addHideSpots(mazeSize, isForest) {
     }
 }
 
-// Acepta un grid personalizado para el cliente
 function loadLevel(level, customGrid = null) {
     while (scene.children.length > 0) scene.remove(scene.children[0]);
     hideSpots = []; tapes = []; isForestLevel = (level % 2 === 0);
@@ -200,8 +198,8 @@ function loadLevel(level, customGrid = null) {
         maze = new MazeGenerator(mazeSize);
     }
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.15)); 
-    scene.add(new THREE.HemisphereLight(0x444444, 0x000000, 0.2));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.1)); // Muy poca luz ambiental
+    scene.add(new THREE.HemisphereLight(0x444444, 0x000000, 0.15));
     
     const flashlight = new THREE.SpotLight(0xfff4d8, 80, 30, Math.PI / 4.5, 0.6, 1.5); 
     flashlight.castShadow = true;
@@ -258,16 +256,32 @@ function loadLevel(level, customGrid = null) {
         monster.mesh.traverse(o => { if(o.isMesh) { o.castShadow = true; } });
     }
 
-    const tapeMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xff0000, emissiveIntensity: 3 });
+    // --- CINTAS REALISTAS (SIN BRILLO, SOLO SE VEN CON LA LINTERNA) ---
+    // Color gris oscuro, rugosidad media para que la luz rebote un poco
+    const tapeMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4, metalness: 0.3 });
     for (let i = 0; i < 3; i++) {
         let tx, ty;
-        // Semilla basada en el nivel para que si se recarga, salgan en el mismo lugar (opcional)
         do { tx = 1 + Math.floor(Math.random() * (mazeSize - 2)); ty = 1 + Math.floor(Math.random() * (mazeSize - 2)); } while (maze.grid[ty][tx] === 1 || (Math.hypot(tx, ty) < 6));
-        const tape = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 1.8), tapeMat);
-        tape.position.set(tx * CELL_SIZE + CELL_SIZE / 2, 1.2, ty * CELL_SIZE + CELL_SIZE / 2); 
-        tape.castShadow = true;
-        scene.add(tape);
-        tapes.push({ mesh: tape, taken: false });
+        
+        // Creamos un pequeño grupo para que parezca un casete con una etiqueta
+        const tapeGroup = new THREE.Group();
+        
+        const tapeBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 1.8), tapeMat);
+        tapeBox.castShadow = true;
+        
+        // Una etiqueta blanca muy pequeña para que se distinga
+        const labelMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.8 });
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), labelMat);
+        label.position.y = 0.11;
+        label.rotation.x = -Math.PI / 2;
+
+        tapeGroup.add(tapeBox);
+        tapeGroup.add(label);
+
+        tapeGroup.position.set(tx * CELL_SIZE + CELL_SIZE / 2, 0.5, ty * CELL_SIZE + CELL_SIZE / 2); 
+        scene.add(tapeGroup);
+        
+        tapes.push({ mesh: tapeGroup, taken: false });
     }
 
     exitPos.set((mazeSize - 2) * CELL_SIZE, 2, (mazeSize - 2) * CELL_SIZE);
@@ -294,7 +308,6 @@ function init(isClient) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap; 
     
-    // Si es cliente, inicia con un mapa vacío hasta que el Host le envíe el suyo
     if(isClient) {
         maze = new MazeGenerator(15);
         scene.background = new THREE.Color(0x000000);
@@ -328,7 +341,6 @@ function setupConnection() {
                 scene.remove(t.mesh); 
             }
         } else if (data.type === 'syncLevel' && !isHost) {
-            // El cliente recibe el nivel Y el mapa exacto del host
             currentLevel = data.level; 
             loadLevel(currentLevel, data.grid);
         }
@@ -433,7 +445,6 @@ function update(dt) {
     const isMoving = !player.isHidden && (moveX !== 0 || moveZ !== 0);
     let currentSpeed = WALK_SPEED;
     
-    // SPRINT (Funciona para ambos)
     if (keys.shift && isMoving && !player.exhausted && player.stamina > 0) {
         currentSpeed = SPRINT_SPEED;
         player.stamina = Math.max(0, player.stamina - 25 * dt);
@@ -472,48 +483,39 @@ function update(dt) {
         remotePlayerMesh.rotation.y = remoteData.rot; remotePlayerMesh.visible = !remoteData.isHidden;
     }
 
-    // --- LÓGICA DE CINTAS (Compartida) ---
     tapes.forEach((t, i) => {
         if (!t.taken) {
-            t.mesh.rotation.y += dt * 2; 
+            t.mesh.rotation.y += dt * 2; // Siguen girando para que la luz de la linterna las ilumine
             if (Math.hypot(player.x - t.mesh.position.x, player.z - t.mesh.position.z) < 2) {
                 t.taken = true; 
                 scene.remove(t.mesh);
-                
-                // Si YO la recogí, se lo aviso al otro
                 if(conn && conn.open) conn.send({ type: 'tapeTaken', index: i });
-                
                 showMsg("Cinta Recuperada"); 
             }
         }
     });
 
-    // --- PASAR DE NIVEL (Solo el Host decide) ---
     if (isHost && tapes.every(t => t.taken) && Math.hypot(player.x - exitPos.x, player.z - exitPos.z) < 3) {
         currentLevel++;
         loadLevel(currentLevel);
         if(conn && conn.open) conn.send({ type: 'syncLevel', level: currentLevel, grid: maze.grid });
     }
 
-    // --- MONSTRUO (Host controla, Cliente escucha) ---
     if(isHost && monster) {
         monster.update(dt, camera.position, new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0)), maze, player.isHidden);
         if(conn && conn.open) conn.send({ type: 'monsterSync', x: monster.mesh.position.x, z: monster.mesh.position.z });
         
-        // El host muere si el monstruo lo toca a él
         if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
             player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
             document.getElementById('locker-overlay').style.display = 'none';
         }
     } else if (!isHost && monster) {
-        // El cliente muere si el monstruo (sincronizado) toca al cliente
         if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
             player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
             document.getElementById('locker-overlay').style.display = 'none';
         }
     }
 
-    // Latidos locales basados en la distancia al monstruo
     if(monster) {
         const distM = Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z);
         updateHeartbeat(distM < 12 && !player.isHidden); 
