@@ -6,12 +6,11 @@ import { Monster } from './entity.js';
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
 const WALK_SPEED = 4.8;
-const SPRINT_SPEED = 8.0;
 const PLAYER_RADIUS = 0.7;
 
 let currentLevel = 1;
 let maze, monster, scene, camera, renderer;
-let player = { x: 0, z: 0, stamina: 100, exhausted: false, isHidden: false, joyX: 0, joyY: 0, lastX: 0, lastZ: 0 };
+let player = { x: 0, z: 0, isHidden: false, joyX: 0, joyY: 0, lastX: 0, lastZ: 0 };
 let keys = { w: false, a: false, s: false, d: false, shift: false };
 let tapes = [], hideSpots = [];
 let exitPos = new THREE.Vector3();
@@ -19,97 +18,128 @@ let isRunning = false;
 let isForestLevel = false;
 let playerMesh = null;
 
-// MULTIJUGADOR
 let peer = null;
 let conn = null;
 let isHost = false;
 let remotePlayerMesh = null;
 let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 
-// PUNTOS Y SKINS
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
 document.getElementById('pointsVal').innerText = points;
 
-// --- FUNCIONES GLOBALES ---
+// --- MENÚS ---
 window.startSinglePlayer = function() {
-    isHost = true;
+    isHost = true; // En un jugador, tú eres el host de tu propia partida
     startGame();
 };
 
-window.buySkin = function(color, cost) {
-    if (points >= cost) {
-        points -= cost;
-        localStorage.setItem('br_points', points);
-        localStorage.setItem('br_activeSkin', color);
-        activeSkin = color;
-        document.getElementById('pointsVal').innerText = points;
-        alert("¡Skin equipada!");
-    } else {
-        alert("No tienes suficientes puntos.");
+window.hostGame = function() {
+    const status = document.getElementById('hostStatus');
+    const createBtn = document.getElementById('createRoomBtn');
+    
+    status.style.display = 'block';
+    status.innerText = 'Conectando al servidor (requiere internet)...';
+    createBtn.disabled = true;
+
+    const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+    
+    try {
+        peer = new Peer('BR-' + code);
+        
+        peer.on('open', () => {
+            isHost = true;
+            status.innerText = '¡Sala creada! Esperando a tu amigo...';
+            document.getElementById('hostCodeContainer').style.display = 'block';
+            document.getElementById('hostCodeDisplay').innerText = code;
+        });
+
+        peer.on('error', (err) => {
+            status.innerText = 'Error: No hay conexión a internet o el servidor está caído.';
+            status.style.color = 'red';
+            createBtn.disabled = false;
+            console.error(err);
+        });
+
+        peer.on('connection', (connection) => {
+            conn = connection;
+            setupConnection();
+            status.innerText = '¡Jugador conectado!';
+        });
+    } catch (e) {
+        status.innerText = 'Error de red. Verifica tu internet.';
+        status.style.color = 'red';
+        createBtn.disabled = false;
     }
 };
 
-window.hostGame = function() {
-    const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-    peer = new Peer('BR-' + code);
-    peer.on('open', () => {
-        isHost = true;
-        document.getElementById('hostCodeContainer').style.display = 'block';
-        document.getElementById('hostCodeDisplay').innerText = code;
-        startGame();
-    });
-    peer.on('connection', (connection) => {
-        conn = connection;
-        setupConnection();
-    });
+// Nueva función para arrancar el juego desde el Lobby del Host
+window.startHostGame = function() {
+    startGame();
+    // Le avisamos al cliente que empiece
+    if(conn && conn.open) conn.send({ type: 'loadLevel', level: currentLevel });
 };
 
 window.joinGame = function() {
     const code = document.getElementById('joinCodeInput').value.toUpperCase();
-    if(code.length < 4) return alert("Código inválido");
-    peer = new Peer();
-    peer.on('open', () => {
-        conn = peer.connect('BR-' + code);
-        setupConnection();
-        startGame();
-    });
+    if(code.length < 4) return alert("Código inválido. Deben ser 4 letras.");
+    
+    try {
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect('BR-' + code);
+            setupConnection();
+            
+            // Como cliente, entramos directo a esperar la orden del host
+            document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+            document.getElementById('ui').style.display = 'block';
+            document.getElementById('controls').style.display = 'block';
+            
+            // Hacemos un mini temporizador para inicializar la escena y esperar el nivel del Host
+            setTimeout(() => { init(true); }, 500); 
+        });
+        
+        peer.on('error', (err) => {
+            alert("No se pudo conectar a la sala. Verifica el código y tu internet.");
+        });
+    } catch(e) {
+        alert("Error de conexión a internet.");
+    }
 };
 
 function startGame() {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById('ui').style.display = 'block';
     document.getElementById('controls').style.display = 'block';
-    init();
+    init(false);
 }
 
-// --- LÓGICA 3D ---
-function init() {
+// --- JUEGO ---
+function init(isClient) {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
-    
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     
+    // Si soy Host o Jugador Solo, genero el mapa ya mismo.
+    // Si soy Cliente, genero un mapa temporal que será reemplazado por el del Host.
     loadLevel(currentLevel);
+    
     setupControls();
     window.addEventListener('resize', onWindowResize);
-    
     isRunning = true;
     animate(performance.now());
 }
 
-// --- COLISIONES ---
 function collides(x, z, radius = PLAYER_RADIUS) {
     const checks = [[0,0],[radius,0],[-radius,0],[0,radius],[0,-radius],[radius*0.7,radius*0.7],[radius*0.7,-radius*0.7],[-radius*0.7,radius*0.7],[-radius*0.7,-radius*0.7]];
     for (const [ox, oz] of checks) if (maze.isWall(x + ox, z + oz)) return true;
     return false;
 }
 
-// --- CASILLEROS ---
 function addHideSpots(mazeSize, isForest) {
     hideSpots = [];
     let placed = 0;
@@ -130,14 +160,9 @@ function addHideSpots(mazeSize, isForest) {
             const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.8, 0.9), metalMat);
             body.position.y = 1.9; group.add(body);
             const seam = new THREE.Mesh(new THREE.BoxGeometry(0.05, 3.6, 0.03), darkMat); seam.position.set(0, 1.9, 0.47); group.add(seam);
-            const hL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.14), darkMat); hL.position.set(-0.38, 2.0, 0.52); group.add(hL);
-            const hR = hL.clone(); hR.position.x = 0.38; group.add(hR);
         } else {
             const hayMat = new THREE.MeshStandardMaterial({ color: 0xd4a72c, roughness: 1 });
-            const ropeMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 1 });
             const hay = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 1.8, 8), hayMat); hay.rotation.z = Math.PI / 2; hay.position.y = 1.2; group.add(hay);
-            const rope1 = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.05, 4, 16), ropeMat); rope1.position.set(-0.5, 1.2, 0); rope1.rotation.y = Math.PI / 2; group.add(rope1);
-            const rope2 = rope1.clone(); rope2.position.x = 0.5; group.add(rope2);
         }
         scene.add(group);
         hideSpots.push({ x: wx, z: wz, radius: 2.1 });
@@ -145,12 +170,11 @@ function addHideSpots(mazeSize, isForest) {
     }
 }
 
-// --- CARGAR NIVEL ---
 function loadLevel(level) {
     while (scene.children.length > 0) scene.remove(scene.children[0]);
     hideSpots = []; tapes = [];
-    
     isForestLevel = (level % 2 === 0);
+    
     const bgColor = isForestLevel ? 0x0a1110 : 0x6b5f3a;
     scene.background = new THREE.Color(bgColor);
     scene.fog = new THREE.FogExp2(bgColor, isForestLevel ? 0.04 : 0.026);
@@ -205,7 +229,6 @@ function loadLevel(level) {
     const door = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), new THREE.MeshBasicMaterial({ color: 0x00ff55 })); door.position.copy(exitPos); scene.add(door);
 
     addHideSpots(mazeSize, isForestLevel);
-    
     document.getElementById('level-ui').innerText = isForestLevel ? `BOSQUE ${level}` : `NIVEL ${level}`;
 }
 
@@ -215,16 +238,23 @@ function getColorHex(color) {
     return 0x0000ff;
 }
 
-// --- MULTIJUGADOR SINCRO ---
 function setupConnection() {
     conn.on('open', () => {
-        if(isHost) conn.send({ type: 'loadLevel', level: currentLevel });
+        conn.send({ type: 'init', skin: activeSkin });
     });
     conn.on('data', (data) => {
         if(data.type === 'move') {
             remoteData.x = data.x; remoteData.z = data.z; remoteData.rot = data.rot; remoteData.isHidden = data.isHidden;
+            if(!remotePlayerMesh) {
+                remotePlayerMesh = new THREE.Group();
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 8), new THREE.MeshLambertMaterial({color: 0xff0000}));
+                body.position.y = 1; remotePlayerMesh.add(body); scene.add(remotePlayerMesh);
+            }
         } else if (data.type === 'monsterSync' && !isHost) {
-            if(monster) { monster.mesh.position.x = data.x; monster.mesh.position.z = data.z; }
+            if(!monster) {
+                monster = new Monster(scene, isForestLevel ? 'scarecrow' : 'smiler');
+            }
+            monster.mesh.position.x = data.x; monster.mesh.position.z = data.z;
         } else if (data.type === 'tapeTaken' && !isHost) {
             const t = tapes[data.index]; if(t && !t.taken) { t.taken = true; scene.remove(t.mesh); }
         } else if (data.type === 'loadLevel' && !isHost) {
@@ -233,7 +263,6 @@ function setupConnection() {
     });
 }
 
-// --- CONTROLES ---
 function setupControls() {
     window.addEventListener('keydown', e => {
         if (e.key.toLowerCase() === 'w') keys.w = true;
@@ -296,7 +325,6 @@ function tryHide() {
     }
 }
 
-// --- BUCLE ---
 let lastTime = 0;
 function animate(time) {
     requestAnimationFrame(animate);
@@ -318,7 +346,6 @@ function update(dt) {
         const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
         const moveDir = forward.multiplyScalar(-moveZ).add(right.multiplyScalar(moveX));
         
-        // COLISIONES
         const vx = moveDir.x * WALK_SPEED * dt;
         const vz = moveDir.z * WALK_SPEED * dt;
         if (!collides(player.x + vx, player.z)) player.x += vx;
