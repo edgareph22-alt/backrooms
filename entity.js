@@ -14,8 +14,9 @@ export class Monster {
     }
 
     buildSmiler() {
-        const darkMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-        const paleMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x444444 }); 
+        const darkMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9 });
+        const paleMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222 }); 
+        // BRILLO ROJO EN LA SONRISA
         const redMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
         const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
@@ -34,6 +35,11 @@ export class Monster {
         const smile = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.08, 8, 16, Math.PI), redMat);
         smile.position.set(0, 2.0, -2.6); smile.rotation.x = Math.PI / 2; smile.rotation.z = Math.PI;
         this.mesh.add(smile);
+
+        // Luz roja tenue que emana de su cara
+        const faceLight = new THREE.PointLight(0xff0000, 1, 5);
+        faceLight.position.set(0, 2.2, -2.5);
+        this.mesh.add(faceLight);
 
         this.legs = [];
         const legPositions = [{x: -0.6, z: -1.0}, {x: 0.6, z: -1.0}, {x: -0.6, z: 1.0}, {x: 0.6, z: 1.0}];
@@ -54,8 +60,15 @@ export class Monster {
         const cross = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3, 6), woodMat); cross.rotation.z = Math.PI / 2; cross.position.y = 3.2; this.mesh.add(cross);
         const sack = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 2, 8), clothMat); sack.position.y = 2.5; this.mesh.add(sack);
         const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), clothMat); head.position.y = 3.8; this.mesh.add(head);
-        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), new THREE.MeshBasicMaterial({color:0xffaa00})); eyeL.position.set(-0.2, 3.9, -0.4); this.mesh.add(eyeL);
+        
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat); eyeL.position.set(-0.2, 3.9, -0.4); this.mesh.add(eyeL);
         const eyeR = eyeL.clone(); eyeR.position.x = 0.2; this.mesh.add(eyeR);
+        
+        const faceLight = new THREE.PointLight(0xffaa00, 1, 5);
+        faceLight.position.set(0, 3.8, -0.5);
+        this.mesh.add(faceLight);
+
         this.legs = [];
     }
 
