@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
-console.log("VERSION 7 - Luz manual y Audio forzado");
+console.log("VERSION 8 - Linterna en primera persona y audio arreglado");
 
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
@@ -11,7 +11,7 @@ const SPRINT_SPEED = 7.8;
 const PLAYER_RADIUS = 0.7;
 
 let currentLevel = 1;
-let maze, monster, scene, camera, renderer;
+let maze, monster, scene, camera, renderer, levelGroup, flashlight;
 let player = { x: 0, z: 0, isHidden: false, joyX: 0, joyY: 0, lastX: 0, lastZ: 0, stamina: 100, exhausted: false };
 let keys = { w: false, a: false, s: false, d: false, shift: false };
 let tapes = [], hideSpots = [], ceilingLights = [];
@@ -19,7 +19,6 @@ let exitPos = new THREE.Vector3();
 let isRunning = false;
 let isForestLevel = false;
 let playerMesh = null;
-let flashlight = null; // Linterna global
 
 let peer = null, conn = null, isHost = false, remotePlayerMesh = null;
 let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
@@ -27,26 +26,19 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-// --- SISTEMA DE AUDIO REFORZADO ---
+// --- SISTEMA DE AUDIO ---
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
-let bgMusicOsc = null;
-let buzzOsc = null, buzzGain = null;
-let heartbeatOsc = null;
+let bgMusicOsc = null, buzzOsc = null, buzzGain = null, heartbeatOsc = null;
 let stepTimer = 0;
 
 function initAudio() {
     try {
-        if (!audioCtx) {
-            audioCtx = new AudioContext();
-        }
-        // FORZAR INICIO EN SAFARI
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
-        }
+        if (!audioCtx) audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         
         if (!bgMusicOsc) {
-            // Música de fondo
+            // Música de suspenso (Drone)
             bgMusicOsc = audioCtx.createOscillator();
             const musicGain = audioCtx.createGain();
             bgMusicOsc.type = 'sine'; bgMusicOsc.frequency.value = 45; 
@@ -56,7 +48,7 @@ function initAudio() {
         }
 
         if (!buzzOsc) {
-            // Zumbido de luces
+            // Zumbido de luces (El volumen cambia por cercanía)
             buzzOsc = audioCtx.createOscillator();
             buzzGain = audioCtx.createGain();
             buzzOsc.type = 'sawtooth'; buzzOsc.frequency.value = 120; 
@@ -198,12 +190,15 @@ function addHideSpots(mazeSize, isForest) {
             const hay = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 1.8, 8), hayMat); hay.rotation.z = Math.PI / 2; hay.position.y = 1.2; 
             hay.castShadow = true; group.add(hay);
         }
-        scene.add(group); hideSpots.push({ x: wx, z: wz, radius: 2.1 }); placed++;
+        levelGroup.add(group); hideSpots.push({ x: wx, z: wz, radius: 2.1 }); placed++;
     }
 }
 
+// --- CARGAR NIVEL ---
 function loadLevel(level, customGrid = null) {
-    while (scene.children.length > 0) scene.remove(scene.children[0]);
+    if (levelGroup) scene.remove(levelGroup);
+    levelGroup = new THREE.Group(); scene.add(levelGroup);
+    
     hideSpots = []; tapes = []; ceilingLights = []; isForestLevel = (level % 2 === 0);
     
     const bgColor = isForestLevel ? 0x050806 : 0x110d05;
@@ -219,17 +214,27 @@ function loadLevel(level, customGrid = null) {
         maze = new MazeGenerator(mazeSize);
     }
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.05)); 
-    
-    // LINTERNA GLOBAL (Ya no está pegada a la cámara, se actualiza en el loop)
-    flashlight = new THREE.SpotLight(0xfff4d8, 100, 35, Math.PI / 4.5, 0.6, 1.5); 
-    flashlight.castShadow = true;
-    flashlight.shadow.mapSize.width = 512; 
-    flashlight.shadow.mapSize.height = 512;
-    flashlight.shadow.bias = -0.001; 
-    flashlight.shadow.normalBias = 0.05; 
-    scene.add(flashlight);
-    scene.add(flashlight.target);
+    // Focos del techo (se agregan al nivel, no a la cámara)
+    if (!isForestLevel) {
+        const tubeGeo = new THREE.BoxGeometry(2, 0.1, 0.5);
+        const tubeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        for (let y = 1; y < mazeSize; y += 3) {
+            for (let x = 1; x < mazeSize; x += 3) {
+                if (maze.grid[y][x] === 1) continue;
+                const cx = x * CELL_SIZE + CELL_SIZE / 2;
+                const cz = y * CELL_SIZE + CELL_SIZE / 2;
+                
+                const tube = new THREE.Mesh(tubeGeo, tubeMat);
+                tube.position.set(cx, WALL_HEIGHT - 0.05, cz);
+                levelGroup.add(tube);
+
+                const pl = new THREE.PointLight(0xfff8d7, 1.5, 12);
+                pl.position.set(cx, WALL_HEIGHT - 0.5, cz);
+                levelGroup.add(pl);
+                ceilingLights.push({ x: cx, z: cz });
+            }
+        }
+    }
 
     const wallTex = makeTex(isForestLevel ? 'floor' : 'wall'); wallTex.repeat.set(2, 1);
     const floorTex = makeTex('floor'); floorTex.repeat.set(mazeSize, mazeSize);
@@ -242,12 +247,12 @@ function loadLevel(level, customGrid = null) {
     const floorGeo = new THREE.PlaneGeometry(mazeSize * CELL_SIZE, mazeSize * CELL_SIZE);
     const floor = new THREE.Mesh(floorGeo, floorMat); 
     floor.rotation.x = -Math.PI / 2; floor.position.set((mazeSize * CELL_SIZE) / 2, 0, (mazeSize * CELL_SIZE) / 2); 
-    floor.receiveShadow = true; scene.add(floor);
+    floor.receiveShadow = true; levelGroup.add(floor);
     
     if (!isForestLevel) {
         const ceil = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1 }));
         ceil.rotation.x = Math.PI / 2; ceil.position.set((mazeSize * CELL_SIZE) / 2, WALL_HEIGHT, (mazeSize * CELL_SIZE) / 2); 
-        ceil.receiveShadow = true; scene.add(ceil);
+        ceil.receiveShadow = true; levelGroup.add(ceil);
     }
 
     for (let y = 0; y < mazeSize; y++) {
@@ -256,29 +261,7 @@ function loadLevel(level, customGrid = null) {
                 const wall = new THREE.Mesh(new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE), wallMat);
                 wall.position.set(x * CELL_SIZE + CELL_SIZE / 2, WALL_HEIGHT / 2, y * CELL_SIZE + CELL_SIZE / 2); 
                 wall.castShadow = true; wall.receiveShadow = true;
-                scene.add(wall);
-            }
-        }
-    }
-
-    // FOCOS EN EL TECHO
-    if (!isForestLevel) {
-        const tubeGeo = new THREE.BoxGeometry(2, 0.1, 0.5);
-        const tubeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        for (let y = 1; y < mazeSize; y += 3) {
-            for (let x = 1; x < mazeSize; x += 3) {
-                if (maze.grid[y][x] === 1) continue;
-                const cx = x * CELL_SIZE + CELL_SIZE / 2;
-                const cz = y * CELL_SIZE + CELL_SIZE / 2;
-                
-                const tube = new THREE.Mesh(tubeGeo, tubeMat);
-                tube.position.set(cx, WALL_HEIGHT - 0.05, cz);
-                scene.add(tube);
-
-                const pl = new THREE.PointLight(0xfff8d7, 1.5, 12);
-                pl.position.set(cx, WALL_HEIGHT - 0.5, cz);
-                scene.add(pl);
-                ceilingLights.push({ x: cx, z: cz });
+                levelGroup.add(wall);
             }
         }
     }
@@ -310,13 +293,13 @@ function loadLevel(level, customGrid = null) {
         label.position.y = 0.11; label.rotation.x = -Math.PI / 2;
         tapeGroup.add(tapeBox); tapeGroup.add(label);
         tapeGroup.position.set(tx * CELL_SIZE + CELL_SIZE / 2, 0.5, ty * CELL_SIZE + CELL_SIZE / 2); 
-        scene.add(tapeGroup);
+        levelGroup.add(tapeGroup);
         tapes.push({ mesh: tapeGroup, taken: false });
     }
 
     exitPos.set((mazeSize - 2) * CELL_SIZE, 2, (mazeSize - 2) * CELL_SIZE);
     const door = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), new THREE.MeshBasicMaterial({ color: 0x00ff55 })); 
-    door.position.copy(exitPos); scene.add(door);
+    door.position.copy(exitPos); levelGroup.add(door);
 
     addHideSpots(mazeSize, isForestLevel);
     document.getElementById('level-ui').innerText = isForestLevel ? `BOSQUE ${level}` : `NIVEL ${level}`;
@@ -331,13 +314,31 @@ function init(isClient) {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
+    
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
     renderer.setSize(window.innerWidth, window.innerHeight);
-    
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap; 
+
+    // --- LINTERNA PEGADA A LA CÁMARA (Solución definitiva) ---
+    flashlight = new THREE.SpotLight(0xfff4d8, 100, 35, Math.PI / 4.5, 0.6, 1.5); 
+    flashlight.castShadow = true;
+    flashlight.shadow.mapSize.width = 512; 
+    flashlight.shadow.mapSize.height = 512;
+    flashlight.shadow.bias = -0.001; 
+    flashlight.shadow.normalBias = 0.05; 
     
+    // Posición ligeramente a la derecha y abajo (como sosteniéndola)
+    flashlight.position.set(0.2, -0.1, 0); 
+    flashlight.target.position.set(0, 0, -1); // Apunta hacia adelante
+    
+    camera.add(flashlight);
+    camera.add(flashlight.target);
+    scene.add(camera);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.05)); 
+
     if(isClient) {
         maze = new MazeGenerator(15);
         scene.background = new THREE.Color(0x000000);
@@ -500,17 +501,9 @@ function update(dt) {
         if (stepTimer > stepInterval) { stepTimer = 0; playStep(isRunningNow); }
     }
 
+    // La cámara (y la linterna) se mueven a la posición del jugador
     camera.position.set(player.x, 1.7, player.z);
     if(playerMesh) { playerMesh.position.set(player.x, 0, player.z); playerMesh.rotation.y = camera.rotation.y; }
-
-    // --- ACTUALIZAR LINTERNA (El arreglo de que la luz no sigue a la cámara) ---
-    if (flashlight) {
-        flashlight.position.set(player.x, 1.7, player.z); // Pegada a tus ojos
-        
-        // Calcular hacia dónde mira la cámara
-        const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
-        flashlight.target.position.copy(flashlight.position).add(dir.multiplyScalar(10));
-    }
 
     // VOLUMEN DEL ZUMBIDO
     if (audioCtx && buzzGain && ceilingLights.length > 0) {
