@@ -2,10 +2,12 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
+console.log("VERSION 4 - Multijugador Sincronizado");
+
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
-const WALK_SPEED = 4.0;
-const SPRINT_SPEED = 7.5;
+const WALK_SPEED = 4.2;
+const SPRINT_SPEED = 7.8;
 const PLAYER_RADIUS = 0.7;
 
 let currentLevel = 1;
@@ -24,55 +26,33 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-// --- SISTEMA DE AUDIO ---
+// --- AUDIO INDEPENDIENTE POR DISPOSITIVO ---
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 let heartbeatOsc = null;
 let stepTimer = 0;
 
 function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new AudioContext();
-    
-    // Zumbido de luces
-    const humOsc = audioCtx.createOscillator();
-    const humGain = audioCtx.createGain();
-    humOsc.type = 'sawtooth';
-    humOsc.frequency.value = 60;
-    humGain.gain.value = 0.03;
-    humOsc.connect(humGain); humGain.connect(audioCtx.destination);
-    humOsc.start();
-
-    // Música oscura (Drone)
-    const droneOsc = audioCtx.createOscillator();
-    const droneGain = audioCtx.createGain();
-    droneOsc.type = 'sine';
-    droneOsc.frequency.value = 40;
-    droneGain.gain.value = 0.05;
-    droneOsc.connect(droneGain); droneGain.connect(audioCtx.destination);
-    droneOsc.start();
+    try {
+        if (audioCtx) return;
+        audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        const humOsc = audioCtx.createOscillator();
+        const humGain = audioCtx.createGain();
+        humOsc.type = 'sawtooth'; humOsc.frequency.value = 60; humGain.gain.value = 0.02;
+        humOsc.connect(humGain); humGain.connect(audioCtx.destination); humOsc.start();
+    } catch(e) { console.log("Audio error", e); }
 }
 
 function playStep() {
     if (!audioCtx) return;
     const t = audioCtx.currentTime;
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(80, t);
+    o.type = 'triangle'; o.frequency.setValueAtTime(70, t);
     o.frequency.exponentialRampToValueAtTime(30, t + 0.1);
     g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
     o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.1);
-}
-
-function playScare() {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const bufferSize = audioCtx.sampleRate * 0.5;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-    const src = audioCtx.createBufferSource(); src.buffer = buffer;
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.5, t);
-    src.connect(g); g.connect(audioCtx.destination); src.start(t);
 }
 
 function updateHeartbeat(isNear) {
@@ -80,11 +60,9 @@ function updateHeartbeat(isNear) {
     if (isNear && !heartbeatOsc) {
         heartbeatOsc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
-        heartbeatOsc.type = 'sine'; 
-        heartbeatOsc.frequency.setValueAtTime(50, audioCtx.currentTime);
-        g.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        heartbeatOsc.connect(g); g.connect(audioCtx.destination); 
-        heartbeatOsc.start();
+        heartbeatOsc.type = 'sine'; heartbeatOsc.frequency.setValueAtTime(50, audioCtx.currentTime);
+        g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        heartbeatOsc.connect(g); g.connect(audioCtx.destination); heartbeatOsc.start();
     } else if (!isNear && heartbeatOsc) {
         heartbeatOsc.stop(); heartbeatOsc = null;
     }
@@ -92,17 +70,13 @@ function updateHeartbeat(isNear) {
 
 document.getElementById('pointsVal').innerText = points;
 
-// --- FUNCIONES GLOBALES ---
+// --- MENÚS ---
 window.showScreen = function(id) {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById(id).style.display = 'flex';
 };
 window.saveSettings = function() { showScreen('mainMenu'); };
-window.startSinglePlayer = function() { 
-    initAudio(); // Inicializar audio al hacer clic
-    isHost = true; 
-    startGame(); 
-};
+window.startSinglePlayer = function() { initAudio(); isHost = true; startGame(); };
 window.buySkin = function(color, cost) {
     if (points >= cost) {
         points -= cost; localStorage.setItem('br_points', points);
@@ -112,6 +86,7 @@ window.buySkin = function(color, cost) {
 };
 
 window.hostGame = function() {
+    initAudio();
     const status = document.getElementById('hostStatus');
     const createBtn = document.getElementById('createRoomBtn');
     status.style.display = 'block'; status.innerText = 'Conectando...'; status.style.color = '#ffd23f'; createBtn.disabled = true;
@@ -126,21 +101,25 @@ window.hostGame = function() {
         document.getElementById('hostCodeDisplay').innerText = code;
     });
     peer.on('error', (err) => { status.innerText = 'Error: ' + err.type; status.style.color = 'red'; createBtn.disabled = false; });
-    peer.on('connection', (connection) => { conn = connection; setupConnection(); status.innerText = '¡Jugador conectado!'; });
+    peer.on('connection', (connection) => { 
+        conn = connection; 
+        setupConnection(); 
+        status.innerText = '¡Jugador conectado!'; 
+    });
 };
 
 window.startHostGame = function() {
-    initAudio(); // Inicializar audio
+    initAudio();
     startGame();
-    if(conn && conn.open) conn.send({ type: 'loadLevel', level: currentLevel });
+    // Enviar el mapa actual al cliente
+    if(conn && conn.open) conn.send({ type: 'syncLevel', level: currentLevel, grid: maze.grid });
 };
 
 window.joinGame = function() {
+    initAudio();
     const code = document.getElementById('joinCodeInput').value.toUpperCase();
     if(code.length < 4) return alert("Código inválido.");
     if (typeof Peer === 'undefined') return alert("Error: Sin internet.");
-    
-    initAudio(); // Inicializar audio
     
     peer = new Peer();
     peer.on('open', () => {
@@ -158,23 +137,20 @@ function startGame() {
     init(false);
 }
 
-// --- TEXTURAS ---
+// --- TEXTURAS SUCIAS ---
 function makeTex(kind) {
     const c = document.createElement('canvas'); c.width = c.height = 256;
     const g = c.getContext('2d');
     if (kind === 'wall') {
-        g.fillStyle = '#a89245'; g.fillRect(0, 0, 256, 256);
-        g.fillStyle = 'rgba(80,60,20,0.3)'; 
-        for (let i = 0; i < 40; i++) {
-            g.beginPath(); g.arc(Math.random()*256, Math.random()*256, Math.random()*30+10, 0, 7); g.fill();
-        }
-        g.fillStyle = '#5a4a1e'; for (let x = 0; x < 256; x += 24) g.fillRect(x, 0, 2, 256);
-        g.fillStyle = '#3a2e10'; g.fillRect(0, 240, 256, 16); 
+        g.fillStyle = '#8a7530'; g.fillRect(0, 0, 256, 256);
+        g.fillStyle = 'rgba(40,30,10,0.4)'; 
+        for (let i = 0; i < 60; i++) { g.beginPath(); g.arc(Math.random()*256, Math.random()*256, Math.random()*30+10, 0, 7); g.fill(); }
+        g.fillStyle = '#3a2e10'; for (let x = 0; x < 256; x += 24) g.fillRect(x, 0, 2, 256);
     } else if (kind === 'floor') {
-        g.fillStyle = '#6b5a2e'; g.fillRect(0, 0, 256, 256);
-        for (let i = 0; i < 80; i++) { g.fillStyle = 'rgba(20,15,5,0.2)'; g.beginPath(); g.arc(Math.random()*256, Math.random()*256, 10 + Math.random()*20, 0, 7); g.fill(); }
+        g.fillStyle = '#3b2e1a'; g.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 100; i++) { g.fillStyle = 'rgba(10,5,0,0.3)'; g.beginPath(); g.arc(Math.random()*256, Math.random()*256, 10 + Math.random()*20, 0, 7); g.fill(); }
     } else {
-        g.fillStyle = '#555'; g.fillRect(0, 0, 256, 256); 
+        g.fillStyle = '#222'; g.fillRect(0, 0, 256, 256); 
     }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
@@ -196,36 +172,42 @@ function addHideSpots(mazeSize, isForest) {
         if (!isForest) {
             const metalMat = new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.6, metalness: 0.8 });
             const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.8, 0.9), metalMat); body.position.y = 1.9; 
-            body.castShadow = true; body.receiveShadow = true;
-            group.add(body);
+            body.castShadow = true; group.add(body);
         } else {
             const hayMat = new THREE.MeshStandardMaterial({ color: 0x8a6a1c, roughness: 1 });
             const hay = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 1.8, 8), hayMat); hay.rotation.z = Math.PI / 2; hay.position.y = 1.2; 
-            hay.castShadow = true;
-            group.add(hay);
+            hay.castShadow = true; group.add(hay);
         }
         scene.add(group); hideSpots.push({ x: wx, z: wz, radius: 2.1 }); placed++;
     }
 }
 
-function loadLevel(level) {
+// Acepta un grid personalizado para el cliente
+function loadLevel(level, customGrid = null) {
     while (scene.children.length > 0) scene.remove(scene.children[0]);
     hideSpots = []; tapes = []; isForestLevel = (level % 2 === 0);
     
-    const bgColor = isForestLevel ? 0x050806 : 0x1a150a;
+    const bgColor = isForestLevel ? 0x050806 : 0x110d05;
     scene.background = new THREE.Color(bgColor); 
-    scene.fog = new THREE.FogExp2(bgColor, isForestLevel ? 0.08 : 0.06);
+    scene.fog = new THREE.FogExp2(bgColor, isForestLevel ? 0.08 : 0.06); 
     
-    const mazeSize = 15 + Math.min(level * 2, 10); maze = new MazeGenerator(mazeSize);
+    let mazeSize;
+    if (customGrid) {
+        mazeSize = customGrid.length;
+        maze = new MazeGenerator(mazeSize, customGrid);
+    } else {
+        mazeSize = 15 + Math.min(level * 2, 10); 
+        maze = new MazeGenerator(mazeSize);
+    }
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.1)); 
-    scene.add(new THREE.HemisphereLight(0x3a3a3a, 0x000000, 0.2));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.15)); 
+    scene.add(new THREE.HemisphereLight(0x444444, 0x000000, 0.2));
     
-    const flashlight = new THREE.SpotLight(0xfff4d8, 50, 25, Math.PI / 5.5, 0.5, 1.5);
+    const flashlight = new THREE.SpotLight(0xfff4d8, 80, 30, Math.PI / 4.5, 0.6, 1.5); 
     flashlight.castShadow = true;
-    flashlight.shadow.mapSize.width = 1024;
-    flashlight.shadow.mapSize.height = 1024;
-    flashlight.position.set(0.25, -0.15, 0);
+    flashlight.shadow.mapSize.width = 512; 
+    flashlight.shadow.mapSize.height = 512;
+    flashlight.position.set(0.2, -0.1, 0);
     flashlight.target.position.set(0, 0, -1);
     camera.add(flashlight); camera.add(flashlight.target); scene.add(camera);
 
@@ -233,7 +215,7 @@ function loadLevel(level) {
     const floorTex = makeTex('floor'); floorTex.repeat.set(mazeSize, mazeSize);
     const ceilTex = makeTex('ceil'); ceilTex.repeat.set(mazeSize, mazeSize);
 
-    let wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, metalness: 0.1 });
+    let wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 });
     if (isForestLevel) wallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a, roughness: 1 });
     const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 1 });
 
@@ -246,8 +228,7 @@ function loadLevel(level) {
     if (!isForestLevel) {
         const ceil = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1 }));
         ceil.rotation.x = Math.PI / 2; ceil.position.set((mazeSize * CELL_SIZE) / 2, WALL_HEIGHT, (mazeSize * CELL_SIZE) / 2); 
-        ceil.receiveShadow = true;
-        scene.add(ceil);
+        ceil.receiveShadow = true; scene.add(ceil);
     }
 
     for (let y = 0; y < mazeSize; y++) {
@@ -274,15 +255,16 @@ function loadLevel(level) {
         monster = new Monster(scene, isForestLevel ? 'scarecrow' : 'smiler');
         monster.speed = 5.0 + level * 0.4;
         monster.setPosition((mazeSize - 4) * CELL_SIZE, (mazeSize - 4) * CELL_SIZE);
-        monster.mesh.traverse(o => { if(o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        monster.mesh.traverse(o => { if(o.isMesh) { o.castShadow = true; } });
     }
 
-    const tapeMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x880000, emissiveIntensity: 2 });
+    const tapeMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xff0000, emissiveIntensity: 3 });
     for (let i = 0; i < 3; i++) {
         let tx, ty;
+        // Semilla basada en el nivel para que si se recarga, salgan en el mismo lugar (opcional)
         do { tx = 1 + Math.floor(Math.random() * (mazeSize - 2)); ty = 1 + Math.floor(Math.random() * (mazeSize - 2)); } while (maze.grid[ty][tx] === 1 || (Math.hypot(tx, ty) < 6));
-        const tape = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1.5), tapeMat);
-        tape.position.set(tx * CELL_SIZE + CELL_SIZE / 2, 1, ty * CELL_SIZE + CELL_SIZE / 2); 
+        const tape = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 1.8), tapeMat);
+        tape.position.set(tx * CELL_SIZE + CELL_SIZE / 2, 1.2, ty * CELL_SIZE + CELL_SIZE / 2); 
         tape.castShadow = true;
         scene.add(tape);
         tapes.push({ mesh: tape, taken: false });
@@ -294,6 +276,7 @@ function loadLevel(level) {
 
     addHideSpots(mazeSize, isForestLevel);
     document.getElementById('level-ui').innerText = isForestLevel ? `BOSQUE ${level}` : `NIVEL ${level}`;
+    showMsg("Encuentra 3 cintas VHS");
 }
 
 function getColorHex(color) {
@@ -305,18 +288,28 @@ function init(isClient) {
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
     renderer.setSize(window.innerWidth, window.innerHeight);
     
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap; 
     
-    loadLevel(currentLevel); setupControls(); window.addEventListener('resize', onWindowResize);
+    // Si es cliente, inicia con un mapa vacío hasta que el Host le envíe el suyo
+    if(isClient) {
+        maze = new MazeGenerator(15);
+        scene.background = new THREE.Color(0x000000);
+    } else {
+        loadLevel(currentLevel); 
+    }
+    
+    setupControls(); window.addEventListener('resize', onWindowResize);
     isRunning = true; animate(performance.now());
 }
 
 function setupConnection() {
-    conn.on('open', () => { conn.send({ type: 'init', skin: activeSkin }); });
+    conn.on('open', () => { 
+        conn.send({ type: 'init', skin: activeSkin }); 
+    });
     conn.on('data', (data) => {
         if(data.type === 'move') {
             remoteData.x = data.x; remoteData.z = data.z; remoteData.rot = data.rot; remoteData.isHidden = data.isHidden;
@@ -328,10 +321,16 @@ function setupConnection() {
         } else if (data.type === 'monsterSync' && !isHost) {
             if(!monster) monster = new Monster(scene, isForestLevel ? 'scarecrow' : 'smiler');
             monster.mesh.position.x = data.x; monster.mesh.position.z = data.z;
-        } else if (data.type === 'tapeTaken' && !isHost) {
-            const t = tapes[data.index]; if(t && !t.taken) { t.taken = true; scene.remove(t.mesh); }
-        } else if (data.type === 'loadLevel' && !isHost) {
-            currentLevel = data.level; loadLevel(currentLevel);
+        } else if (data.type === 'tapeTaken') {
+            const t = tapes[data.index]; 
+            if(t && !t.taken) { 
+                t.taken = true; 
+                scene.remove(t.mesh); 
+            }
+        } else if (data.type === 'syncLevel' && !isHost) {
+            // El cliente recibe el nivel Y el mapa exacto del host
+            currentLevel = data.level; 
+            loadLevel(currentLevel, data.grid);
         }
     });
 }
@@ -409,6 +408,7 @@ function tryHide() {
                 document.getElementById('locker-overlay').style.display = 'block'; return;
             }
         }
+        showMsg("No hay escondite cerca");
     } else {
         player.x = player.lastX; player.z = player.lastZ; player.isHidden = false;
         document.getElementById('locker-overlay').style.display = 'none';
@@ -433,18 +433,21 @@ function update(dt) {
     const isMoving = !player.isHidden && (moveX !== 0 || moveZ !== 0);
     let currentSpeed = WALK_SPEED;
     
+    // SPRINT (Funciona para ambos)
     if (keys.shift && isMoving && !player.exhausted && player.stamina > 0) {
         currentSpeed = SPRINT_SPEED;
-        player.stamina = Math.max(0, player.stamina - 20 * dt);
+        player.stamina = Math.max(0, player.stamina - 25 * dt);
         if (player.stamina <= 0) player.exhausted = true;
     } else {
-        player.stamina = Math.min(100, player.stamina + 12 * dt);
+        player.stamina = Math.min(100, player.stamina + 15 * dt);
         if (player.stamina > 30) player.exhausted = false;
     }
     
     const bat = document.getElementById('battery-fill');
-    bat.style.width = player.stamina + '%';
-    bat.style.background = player.exhausted ? '#ff2222' : (player.isHidden ? '#44aaff' : '#fff');
+    if (bat) {
+        bat.style.width = player.stamina + '%';
+        bat.style.background = player.exhausted ? '#ff2222' : (player.isHidden ? '#44aaff' : '#fff');
+    }
 
     if (isMoving) {
         const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
@@ -455,7 +458,6 @@ function update(dt) {
         if (!collides(player.x + vx, player.z)) player.x += vx;
         if (!collides(player.x, player.z + vz)) player.z += vz;
 
-        // Sonido de pasos
         stepTimer += dt;
         if (stepTimer > (keys.shift ? 0.3 : 0.5)) { stepTimer = 0; playStep(); }
     }
@@ -470,42 +472,60 @@ function update(dt) {
         remotePlayerMesh.rotation.y = remoteData.rot; remotePlayerMesh.visible = !remoteData.isHidden;
     }
 
+    // --- LÓGICA DE CINTAS (Compartida) ---
     tapes.forEach((t, i) => {
         if (!t.taken) {
             t.mesh.rotation.y += dt * 2; 
             if (Math.hypot(player.x - t.mesh.position.x, player.z - t.mesh.position.z) < 2) {
-                t.taken = true; scene.remove(t.mesh);
-                if(conn && conn.open && isHost) conn.send({ type: 'tapeTaken', index: i });
-                showMsg("Cinta Recuperada"); // Añadí un aviso visual
+                t.taken = true; 
+                scene.remove(t.mesh);
+                
+                // Si YO la recogí, se lo aviso al otro
+                if(conn && conn.open) conn.send({ type: 'tapeTaken', index: i });
+                
+                showMsg("Cinta Recuperada"); 
             }
         }
     });
 
-    if (tapes.every(t => t.taken) && Math.hypot(player.x - exitPos.x, player.z - exitPos.z) < 3) {
+    // --- PASAR DE NIVEL (Solo el Host decide) ---
+    if (isHost && tapes.every(t => t.taken) && Math.hypot(player.x - exitPos.x, player.z - exitPos.z) < 3) {
         currentLevel++;
         loadLevel(currentLevel);
-        if(conn && conn.open && isHost) conn.send({ type: 'loadLevel', level: currentLevel });
+        if(conn && conn.open) conn.send({ type: 'syncLevel', level: currentLevel, grid: maze.grid });
     }
 
+    // --- MONSTRUO (Host controla, Cliente escucha) ---
     if(isHost && monster) {
         monster.update(dt, camera.position, new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0)), maze, player.isHidden);
         if(conn && conn.open) conn.send({ type: 'monsterSync', x: monster.mesh.position.x, z: monster.mesh.position.z });
         
-        // Latidos y muerte
-        const distM = Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z);
-        updateHeartbeat(distM < 12 && !player.isHidden); // Late si está a menos de 12 metros
-
-        if (distM < 1.8 && !player.isHidden) {
-            playScare(); // Grito al morir
+        // El host muere si el monstruo lo toca a él
+        if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
+            player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
+            document.getElementById('locker-overlay').style.display = 'none';
+        }
+    } else if (!isHost && monster) {
+        // El cliente muere si el monstruo (sincronizado) toca al cliente
+        if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
             player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
             document.getElementById('locker-overlay').style.display = 'none';
         }
     }
+
+    // Latidos locales basados en la distancia al monstruo
+    if(monster) {
+        const distM = Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z);
+        updateHeartbeat(distM < 12 && !player.isHidden); 
+    }
 }
 
 function showMsg(txt) {
-    const m = document.getElementById('msg'); m.textContent = txt; m.classList.add('show');
-    setTimeout(() => m.classList.remove('show'), 2000);
+    const m = document.getElementById('msg'); 
+    if(m) {
+        m.textContent = txt; m.classList.add('show');
+        setTimeout(() => m.classList.remove('show'), 2000);
+    }
 }
 
 function onWindowResize() {
