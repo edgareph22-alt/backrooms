@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
-// PeerJS ya está cargado globalmente desde el index.html
-
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
 const WALK_SPEED = 4.8;
@@ -27,6 +25,7 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
+let sensitivity = 5;
 
 document.getElementById('pointsVal').innerText = points;
 
@@ -41,7 +40,7 @@ window.hostGame = function() {
     const createBtn = document.getElementById('createRoomBtn');
     
     status.style.display = 'block';
-    status.innerText = 'Conectando al servidor (requiere internet)...';
+    status.innerText = 'Conectando al servidor...';
     status.style.color = '#ffd23f';
     createBtn.disabled = true;
 
@@ -68,7 +67,6 @@ window.hostGame = function() {
             status.innerText = 'Error de conexión: ' + err.type;
             status.style.color = 'red';
             createBtn.disabled = false;
-            console.error(err);
         });
 
         peer.on('connection', (connection) => {
@@ -120,6 +118,25 @@ function startGame() {
     document.getElementById('ui').style.display = 'block';
     document.getElementById('controls').style.display = 'block';
     init(false);
+}
+
+// --- TEXTURAS RESTAURADAS ---
+function makeTex(kind) {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    if (kind === 'wall') {
+        g.fillStyle = '#d4c27a'; g.fillRect(0, 0, 256, 256);
+        g.fillStyle = 'rgba(140,120,50,0.2)'; for (let x = 0; x < 256; x += 24) g.fillRect(x, 0, 2, 256);
+        g.fillStyle = '#6b5a2a'; g.fillRect(0, 240, 256, 16);
+    } else if (kind === 'floor') {
+        g.fillStyle = '#a08c4a'; g.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 30; i++) { g.fillStyle = 'rgba(60,45,20,0.12)'; g.beginPath(); g.arc(Math.random()*256, Math.random()*256, 10 + Math.random()*20, 0, 7); g.fill(); }
+    } else {
+        g.fillStyle = '#e8e0c0'; g.fillRect(0, 0, 256, 256);
+        g.strokeStyle = 'rgba(100,90,60,0.5)'; g.lineWidth = 4; g.strokeRect(4, 4, 248, 248);
+        g.beginPath(); g.moveTo(128, 0); g.lineTo(128, 256); g.moveTo(0, 128); g.lineTo(256, 128); g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
 // --- JUEGO ---
@@ -192,11 +209,23 @@ function loadLevel(level) {
     const flashlight = new THREE.SpotLight(0xfff4d8, 40, 28, Math.PI / 5.5, 0.45, 1.4);
     camera.add(flashlight); camera.add(flashlight.target); scene.add(camera);
 
-    const wallMat = new THREE.MeshLambertMaterial({ color: isForestLevel ? 0x1a3311 : 0xd4c27a });
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0xa08c4a });
+    // RESTAURAMOS LAS TEXTURAS
+    const wallTex = makeTex(isForestLevel ? 'floor' : 'wall'); wallTex.repeat.set(2, 1);
+    const floorTex = makeTex('floor'); floorTex.repeat.set(mazeSize, mazeSize);
+    const ceilTex = makeTex('ceil'); ceilTex.repeat.set(mazeSize, mazeSize);
+
+    let wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 });
+    if (isForestLevel) wallMat = new THREE.MeshStandardMaterial({ color: 0x1a3311, roughness: 1 });
+    
+    const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.95 });
 
     const floorGeo = new THREE.PlaneGeometry(mazeSize * CELL_SIZE, mazeSize * CELL_SIZE);
     const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x = -Math.PI / 2; floor.position.set((mazeSize * CELL_SIZE) / 2, 0, (mazeSize * CELL_SIZE) / 2); scene.add(floor);
+    
+    if (!isForestLevel) {
+        const ceil = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1 }));
+        ceil.rotation.x = Math.PI / 2; ceil.position.set((mazeSize * CELL_SIZE) / 2, WALL_HEIGHT, (mazeSize * CELL_SIZE) / 2); scene.add(ceil);
+    }
 
     for (let y = 0; y < mazeSize; y++) {
         for (let x = 0; x < mazeSize; x++) {
@@ -267,6 +296,7 @@ function setupConnection() {
     });
 }
 
+// --- CONTROLES DE CÁMARA RESTAURADOS ---
 function setupControls() {
     window.addEventListener('keydown', e => {
         if (e.key.toLowerCase() === 'w') keys.w = true;
@@ -284,6 +314,18 @@ function setupControls() {
         if (e.key === 'Shift') keys.shift = false;
     });
 
+    // MOUSE (PC)
+    let locked = false;
+    renderer.domElement.addEventListener('click', () => { if (!locked && isRunning) renderer.domElement.requestPointerLock(); });
+    document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === renderer.domElement; });
+    document.addEventListener('mousemove', e => {
+        if (!locked || !isRunning) return;
+        camera.rotation.y -= e.movementX * 0.0021;
+        camera.rotation.x -= e.movementY * 0.0019;
+        camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x));
+    });
+
+    // JOYSTICK (CELULAR)
     const joy = document.getElementById('joy'); const joyKnob = document.getElementById('joyKnob');
     let joyId = null, center = {x:0,y:0};
     joy.addEventListener('touchstart', e => {
@@ -304,6 +346,26 @@ function setupControls() {
     joy.addEventListener('touchend', e => {
         for (const t of e.changedTouches) if (t.identifier === joyId) { joyId = null; player.joyX = 0; player.joyY = 0; joyKnob.style.transform = 'translate(-50%, -50%)'; }
     });
+
+    // DESLIZAR DEDO PARA MIRAR (CELULAR)
+    let lookId = null, lastX = 0, lastY = 0;
+    renderer.domElement.addEventListener('touchstart', e => {
+        if (e.target.closest('#joy') || e.target.closest('#sprintBtn') || e.target.closest('#hideBtn')) return;
+        e.preventDefault(); const t = e.changedTouches[0];
+        if (lookId === null) { lookId = t.identifier; lastX = t.clientX; lastY = t.clientY; }
+    }, {passive:false});
+    renderer.domElement.addEventListener('touchmove', e => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier === lookId) {
+                camera.rotation.y -= (t.clientX - lastX) * 0.005;
+                camera.rotation.x -= (t.clientY - lastY) * 0.004;
+                camera.rotation.x = Math.max(-1.15, Math.min(1.15, camera.rotation.x));
+                lastX = t.clientX; lastY = t.clientY;
+            }
+        }
+    }, {passive:false});
+    renderer.domElement.addEventListener('touchend', e => { for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null; });
 
     const sprintBtn = document.getElementById('sprintBtn');
     sprintBtn.addEventListener('touchstart', e => { e.preventDefault(); keys.shift = true; sprintBtn.classList.add('active'); }, {passive:false});
