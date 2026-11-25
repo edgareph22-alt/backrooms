@@ -192,6 +192,7 @@ function setupControls() {
 }
 
 // --- UPDATE LOOP ---
+points += 50; localStorage.setItem('br_points', points);
 let stepTimer = 0;
 function update(dt) {
     if (!isRunning) return;
