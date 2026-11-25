@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
-console.log("VERSION 6 - Audio y Sombras arregladas");
+console.log("VERSION 7 - Luz manual y Audio forzado");
 
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
@@ -19,6 +19,7 @@ let exitPos = new THREE.Vector3();
 let isRunning = false;
 let isForestLevel = false;
 let playerMesh = null;
+let flashlight = null; // Linterna global
 
 let peer = null, conn = null, isHost = false, remotePlayerMesh = null;
 let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
@@ -26,7 +27,7 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-// --- SISTEMA DE AUDIO AVANZADO ---
+// --- SISTEMA DE AUDIO REFORZADO ---
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 let bgMusicOsc = null;
@@ -36,28 +37,33 @@ let stepTimer = 0;
 
 function initAudio() {
     try {
-        if (audioCtx) return;
-        audioCtx = new AudioContext();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
+        if (!audioCtx) {
+            audioCtx = new AudioContext();
+        }
+        // FORZAR INICIO EN SAFARI
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
         
-        // 1. Música de suspenso de fondo (Drone)
-        bgMusicOsc = audioCtx.createOscillator();
-        const musicGain = audioCtx.createGain();
-        bgMusicOsc.type = 'sine'; 
-        bgMusicOsc.frequency.value = 45; // Tono grave
-        musicGain.gain.value = 0.08;
-        bgMusicOsc.connect(musicGain); musicGain.connect(audioCtx.destination); 
-        bgMusicOsc.start();
+        if (!bgMusicOsc) {
+            // Música de fondo
+            bgMusicOsc = audioCtx.createOscillator();
+            const musicGain = audioCtx.createGain();
+            bgMusicOsc.type = 'sine'; bgMusicOsc.frequency.value = 45; 
+            musicGain.gain.value = 0.1;
+            bgMusicOsc.connect(musicGain); musicGain.connect(audioCtx.destination); 
+            bgMusicOsc.start();
+        }
 
-        // 2. Zumbido de luces (El volumen cambiará según la cercanía)
-        buzzOsc = audioCtx.createOscillator();
-        buzzGain = audioCtx.createGain();
-        buzzOsc.type = 'sawtooth'; 
-        buzzOsc.frequency.value = 120; // Zumbido eléctrico
-        buzzGain.gain.value = 0; // Empieza en silencio
-        buzzOsc.connect(buzzGain); buzzGain.connect(audioCtx.destination); 
-        buzzOsc.start();
-        
+        if (!buzzOsc) {
+            // Zumbido de luces
+            buzzOsc = audioCtx.createOscillator();
+            buzzGain = audioCtx.createGain();
+            buzzOsc.type = 'sawtooth'; buzzOsc.frequency.value = 120; 
+            buzzGain.gain.value = 0;
+            buzzOsc.connect(buzzGain); buzzGain.connect(audioCtx.destination); 
+            buzzOsc.start();
+        }
     } catch(e) { console.log("Audio error", e); }
 }
 
@@ -68,7 +74,7 @@ function playStep(isRunning) {
     o.type = 'triangle'; 
     o.frequency.setValueAtTime(isRunning ? 90 : 60, t);
     o.frequency.exponentialRampToValueAtTime(20, t + 0.15);
-    g.gain.setValueAtTime(isRunning ? 0.3 : 0.1, t); 
+    g.gain.setValueAtTime(isRunning ? 0.4 : 0.15, t); 
     g.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
     o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.15);
 }
@@ -79,14 +85,14 @@ function updateHeartbeat(isNear) {
         heartbeatOsc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         heartbeatOsc.type = 'sine'; heartbeatOsc.frequency.setValueAtTime(50, audioCtx.currentTime);
-        g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        g.gain.setValueAtTime(0.4, audioCtx.currentTime);
         heartbeatOsc.connect(g); g.connect(audioCtx.destination); heartbeatOsc.start();
     } else if (!isNear && heartbeatOsc) {
         heartbeatOsc.stop(); heartbeatOsc = null;
     }
 }
 
-// --- MENÚS Y FUNCIONES GLOBALES ---
+// --- MENÚS ---
 document.getElementById('pointsVal').innerText = points;
 window.showScreen = function(id) {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
@@ -213,20 +219,17 @@ function loadLevel(level, customGrid = null) {
         maze = new MazeGenerator(mazeSize);
     }
 
-    // Luz ambiental MUY baja, casi todo depende de la linterna y los focos
     scene.add(new THREE.AmbientLight(0xffffff, 0.05)); 
     
-    const flashlight = new THREE.SpotLight(0xfff4d8, 80, 30, Math.PI / 4.5, 0.6, 1.5); 
+    // LINTERNA GLOBAL (Ya no está pegada a la cámara, se actualiza en el loop)
+    flashlight = new THREE.SpotLight(0xfff4d8, 100, 35, Math.PI / 4.5, 0.6, 1.5); 
     flashlight.castShadow = true;
     flashlight.shadow.mapSize.width = 512; 
     flashlight.shadow.mapSize.height = 512;
-    // ARREGLO DE LA SOMBRA PEGADA A LA IZQUIERDA:
     flashlight.shadow.bias = -0.001; 
     flashlight.shadow.normalBias = 0.05; 
-    
-    flashlight.position.set(0.2, -0.1, 0);
-    flashlight.target.position.set(0, 0, -1);
-    camera.add(flashlight); camera.add(flashlight.target); scene.add(camera);
+    scene.add(flashlight);
+    scene.add(flashlight.target);
 
     const wallTex = makeTex(isForestLevel ? 'floor' : 'wall'); wallTex.repeat.set(2, 1);
     const floorTex = makeTex('floor'); floorTex.repeat.set(mazeSize, mazeSize);
@@ -258,7 +261,7 @@ function loadLevel(level, customGrid = null) {
         }
     }
 
-    // FOCOS EN EL TECHO (Como en la película)
+    // FOCOS EN EL TECHO
     if (!isForestLevel) {
         const tubeGeo = new THREE.BoxGeometry(2, 0.1, 0.5);
         const tubeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -268,13 +271,11 @@ function loadLevel(level, customGrid = null) {
                 const cx = x * CELL_SIZE + CELL_SIZE / 2;
                 const cz = y * CELL_SIZE + CELL_SIZE / 2;
                 
-                // El tubo visual
                 const tube = new THREE.Mesh(tubeGeo, tubeMat);
                 tube.position.set(cx, WALL_HEIGHT - 0.05, cz);
                 scene.add(tube);
 
-                // La luz real (tenue)
-                const pl = new THREE.PointLight(0xfff8d7, 2, 12);
+                const pl = new THREE.PointLight(0xfff8d7, 1.5, 12);
                 pl.position.set(cx, WALL_HEIGHT - 0.5, cz);
                 scene.add(pl);
                 ceilingLights.push({ x: cx, z: cz });
@@ -294,12 +295,10 @@ function loadLevel(level, customGrid = null) {
     if(isHost) {
         monster = new Monster(scene, isForestLevel ? 'scarecrow' : 'smiler');
         monster.speed = 4.5 + level * 0.3;
-        // Aparece más cerca
         monster.setPosition((mazeSize - 4) * CELL_SIZE, (mazeSize - 4) * CELL_SIZE);
         monster.mesh.traverse(o => { if(o.isMesh) { o.castShadow = true; } });
     }
 
-    // Cintas oscuras
     const tapeMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4, metalness: 0.3 });
     for (let i = 0; i < 3; i++) {
         let tx, ty;
@@ -496,23 +495,30 @@ function update(dt) {
         if (!collides(player.x + vx, player.z)) player.x += vx;
         if (!collides(player.x, player.z + vz)) player.z += vz;
 
-        // SONIDO DE PASOS (Más rápidos al correr)
         stepTimer += dt;
         const stepInterval = isRunningNow ? 0.28 : 0.45;
-        if (stepTimer > stepInterval) { 
-            stepTimer = 0; 
-            playStep(isRunningNow); 
-        }
+        if (stepTimer > stepInterval) { stepTimer = 0; playStep(isRunningNow); }
     }
 
-    // VOLUMEN DEL ZUMBIDO BASADO EN LA DISTANCIA A LOS FOCOS
+    camera.position.set(player.x, 1.7, player.z);
+    if(playerMesh) { playerMesh.position.set(player.x, 0, player.z); playerMesh.rotation.y = camera.rotation.y; }
+
+    // --- ACTUALIZAR LINTERNA (El arreglo de que la luz no sigue a la cámara) ---
+    if (flashlight) {
+        flashlight.position.set(player.x, 1.7, player.z); // Pegada a tus ojos
+        
+        // Calcular hacia dónde mira la cámara
+        const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+        flashlight.target.position.copy(flashlight.position).add(dir.multiplyScalar(10));
+    }
+
+    // VOLUMEN DEL ZUMBIDO
     if (audioCtx && buzzGain && ceilingLights.length > 0) {
         let minDist = Infinity;
         for (let l of ceilingLights) {
             const d = Math.hypot(player.x - l.x, player.z - l.z);
             if (d < minDist) minDist = d;
         }
-        // Si está a menos de 10 metros, el zumbido sube
         if (minDist < 15) {
             const vol = Math.max(0, 1 - (minDist / 15)) * 0.4; 
             buzzGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
@@ -520,9 +526,6 @@ function update(dt) {
             buzzGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
         }
     }
-
-    camera.position.set(player.x, 1.7, player.z);
-    if(playerMesh) { playerMesh.position.set(player.x, 0, player.z); playerMesh.rotation.y = camera.rotation.y; }
 
     if(conn && conn.open) conn.send({ type: 'move', x: player.x, z: player.z, rot: camera.rotation.y, isHidden: player.isHidden });
 
