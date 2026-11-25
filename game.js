@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { Peer } from 'peerjs';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
+
+// PeerJS ya está cargado globalmente desde el index.html
 
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
@@ -31,7 +32,7 @@ document.getElementById('pointsVal').innerText = points;
 
 // --- MENÚS ---
 window.startSinglePlayer = function() {
-    isHost = true; // En un jugador, tú eres el host de tu propia partida
+    isHost = true;
     startGame();
 };
 
@@ -41,7 +42,15 @@ window.hostGame = function() {
     
     status.style.display = 'block';
     status.innerText = 'Conectando al servidor (requiere internet)...';
+    status.style.color = '#ffd23f';
     createBtn.disabled = true;
+
+    if (typeof Peer === 'undefined') {
+        status.innerText = 'Error: El servidor de PeerJS no cargó. Revisa tu internet.';
+        status.style.color = 'red';
+        createBtn.disabled = false;
+        return;
+    }
 
     const code = Math.random().toString(36).substring(2, 6).toUpperCase();
     
@@ -56,7 +65,7 @@ window.hostGame = function() {
         });
 
         peer.on('error', (err) => {
-            status.innerText = 'Error: No hay conexión a internet o el servidor está caído.';
+            status.innerText = 'Error de conexión: ' + err.type;
             status.style.color = 'red';
             createBtn.disabled = false;
             console.error(err);
@@ -68,16 +77,14 @@ window.hostGame = function() {
             status.innerText = '¡Jugador conectado!';
         });
     } catch (e) {
-        status.innerText = 'Error de red. Verifica tu internet.';
+        status.innerText = 'Error inesperado. Verifica tu red.';
         status.style.color = 'red';
         createBtn.disabled = false;
     }
 };
 
-// Nueva función para arrancar el juego desde el Lobby del Host
 window.startHostGame = function() {
     startGame();
-    // Le avisamos al cliente que empiece
     if(conn && conn.open) conn.send({ type: 'loadLevel', level: currentLevel });
 };
 
@@ -85,18 +92,18 @@ window.joinGame = function() {
     const code = document.getElementById('joinCodeInput').value.toUpperCase();
     if(code.length < 4) return alert("Código inválido. Deben ser 4 letras.");
     
+    if (typeof Peer === 'undefined') return alert("Error: No hay conexión a internet.");
+
     try {
         peer = new Peer();
         peer.on('open', () => {
             conn = peer.connect('BR-' + code);
             setupConnection();
             
-            // Como cliente, entramos directo a esperar la orden del host
             document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
             document.getElementById('ui').style.display = 'block';
             document.getElementById('controls').style.display = 'block';
             
-            // Hacemos un mini temporizador para inicializar la escena y esperar el nivel del Host
             setTimeout(() => { init(true); }, 500); 
         });
         
@@ -124,10 +131,7 @@ function init(isClient) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     
-    // Si soy Host o Jugador Solo, genero el mapa ya mismo.
-    // Si soy Cliente, genero un mapa temporal que será reemplazado por el del Host.
     loadLevel(currentLevel);
-    
     setupControls();
     window.addEventListener('resize', onWindowResize);
     isRunning = true;
