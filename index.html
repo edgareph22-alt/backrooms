@@ -45,7 +45,7 @@
         <h2>MULTIJUGADOR</h2>
         <button class="menuBtn" onclick="hostGame()">CREAR SALA</button>
         <div id="hostCodeContainer" style="display:none; margin: 20px 0;">
-            <p>Código de sala:</p>
+            <p>Pásale este código a tus amigos:</p>
             <h1 id="hostCodeDisplay" style="color: #ffd23f; font-size: 40px; letter-spacing: 5px;"></h1>
         </div>
         <p>O únete a una:</p>
@@ -88,22 +88,23 @@
         <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
+    <!-- Usamos la versión online para asegurar que cargue rápido -->
     <script type="importmap">
         { "imports": { 
-            "three": "./three.module.js",
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
             "peerjs": "https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"
         } }
     </script>
+    
+    <!-- Funciones de UI globales (para que los botones funcionen siempre) -->
     <script>
-        // Funciones de UI básicas (para que funcionen incluso si el motor 3D falla)
         function showScreen(id) {
             document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
             document.getElementById(id).style.display = 'flex';
         }
-        function saveSettings() {
-            showScreen('mainMenu');
-        }
+        function saveSettings() { showScreen('mainMenu'); }
     </script>
+    
     <script type="module" src="game.js"></script>
 </body>
 </html>
