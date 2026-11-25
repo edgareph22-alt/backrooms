@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 
-console.log("VERSION 5 - Cintas realistas y audio");
+console.log("VERSION 6 - Audio y Sombras arregladas");
 
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
@@ -14,7 +14,7 @@ let currentLevel = 1;
 let maze, monster, scene, camera, renderer;
 let player = { x: 0, z: 0, isHidden: false, joyX: 0, joyY: 0, lastX: 0, lastZ: 0, stamina: 100, exhausted: false };
 let keys = { w: false, a: false, s: false, d: false, shift: false };
-let tapes = [], hideSpots = [];
+let tapes = [], hideSpots = [], ceilingLights = [];
 let exitPos = new THREE.Vector3();
 let isRunning = false;
 let isForestLevel = false;
@@ -26,9 +26,11 @@ let remoteData = { x: 0, z: 0, rot: 0, isHidden: false };
 let points = parseInt(localStorage.getItem('br_points') || '0');
 let activeSkin = localStorage.getItem('br_activeSkin') || 'blue';
 
-// --- AUDIO INDEPENDIENTE ---
+// --- SISTEMA DE AUDIO AVANZADO ---
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
+let bgMusicOsc = null;
+let buzzOsc = null, buzzGain = null;
 let heartbeatOsc = null;
 let stepTimer = 0;
 
@@ -38,21 +40,37 @@ function initAudio() {
         audioCtx = new AudioContext();
         if (audioCtx.state === 'suspended') audioCtx.resume();
         
-        const humOsc = audioCtx.createOscillator();
-        const humGain = audioCtx.createGain();
-        humOsc.type = 'sawtooth'; humOsc.frequency.value = 60; humGain.gain.value = 0.02;
-        humOsc.connect(humGain); humGain.connect(audioCtx.destination); humOsc.start();
+        // 1. Música de suspenso de fondo (Drone)
+        bgMusicOsc = audioCtx.createOscillator();
+        const musicGain = audioCtx.createGain();
+        bgMusicOsc.type = 'sine'; 
+        bgMusicOsc.frequency.value = 45; // Tono grave
+        musicGain.gain.value = 0.08;
+        bgMusicOsc.connect(musicGain); musicGain.connect(audioCtx.destination); 
+        bgMusicOsc.start();
+
+        // 2. Zumbido de luces (El volumen cambiará según la cercanía)
+        buzzOsc = audioCtx.createOscillator();
+        buzzGain = audioCtx.createGain();
+        buzzOsc.type = 'sawtooth'; 
+        buzzOsc.frequency.value = 120; // Zumbido eléctrico
+        buzzGain.gain.value = 0; // Empieza en silencio
+        buzzOsc.connect(buzzGain); buzzGain.connect(audioCtx.destination); 
+        buzzOsc.start();
+        
     } catch(e) { console.log("Audio error", e); }
 }
 
-function playStep() {
+function playStep(isRunning) {
     if (!audioCtx) return;
     const t = audioCtx.currentTime;
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(70, t);
-    o.frequency.exponentialRampToValueAtTime(30, t + 0.1);
-    g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.1);
+    o.type = 'triangle'; 
+    o.frequency.setValueAtTime(isRunning ? 90 : 60, t);
+    o.frequency.exponentialRampToValueAtTime(20, t + 0.15);
+    g.gain.setValueAtTime(isRunning ? 0.3 : 0.1, t); 
+    g.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.15);
 }
 
 function updateHeartbeat(isNear) {
@@ -68,9 +86,8 @@ function updateHeartbeat(isNear) {
     }
 }
 
+// --- MENÚS Y FUNCIONES GLOBALES ---
 document.getElementById('pointsVal').innerText = points;
-
-// --- MENÚS ---
 window.showScreen = function(id) {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById(id).style.display = 'flex';
@@ -102,9 +119,7 @@ window.hostGame = function() {
     });
     peer.on('error', (err) => { status.innerText = 'Error: ' + err.type; status.style.color = 'red'; createBtn.disabled = false; });
     peer.on('connection', (connection) => { 
-        conn = connection; 
-        setupConnection(); 
-        status.innerText = '¡Jugador conectado!'; 
+        conn = connection; setupConnection(); status.innerText = '¡Jugador conectado!'; 
     });
 };
 
@@ -136,7 +151,7 @@ function startGame() {
     init(false);
 }
 
-// --- TEXTURAS SUCIAS ---
+// --- TEXTURAS ---
 function makeTex(kind) {
     const c = document.createElement('canvas'); c.width = c.height = 256;
     const g = c.getContext('2d');
@@ -183,7 +198,7 @@ function addHideSpots(mazeSize, isForest) {
 
 function loadLevel(level, customGrid = null) {
     while (scene.children.length > 0) scene.remove(scene.children[0]);
-    hideSpots = []; tapes = []; isForestLevel = (level % 2 === 0);
+    hideSpots = []; tapes = []; ceilingLights = []; isForestLevel = (level % 2 === 0);
     
     const bgColor = isForestLevel ? 0x050806 : 0x110d05;
     scene.background = new THREE.Color(bgColor); 
@@ -198,13 +213,17 @@ function loadLevel(level, customGrid = null) {
         maze = new MazeGenerator(mazeSize);
     }
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.1)); // Muy poca luz ambiental
-    scene.add(new THREE.HemisphereLight(0x444444, 0x000000, 0.15));
+    // Luz ambiental MUY baja, casi todo depende de la linterna y los focos
+    scene.add(new THREE.AmbientLight(0xffffff, 0.05)); 
     
     const flashlight = new THREE.SpotLight(0xfff4d8, 80, 30, Math.PI / 4.5, 0.6, 1.5); 
     flashlight.castShadow = true;
     flashlight.shadow.mapSize.width = 512; 
     flashlight.shadow.mapSize.height = 512;
+    // ARREGLO DE LA SOMBRA PEGADA A LA IZQUIERDA:
+    flashlight.shadow.bias = -0.001; 
+    flashlight.shadow.normalBias = 0.05; 
+    
     flashlight.position.set(0.2, -0.1, 0);
     flashlight.target.position.set(0, 0, -1);
     camera.add(flashlight); camera.add(flashlight.target); scene.add(camera);
@@ -220,8 +239,7 @@ function loadLevel(level, customGrid = null) {
     const floorGeo = new THREE.PlaneGeometry(mazeSize * CELL_SIZE, mazeSize * CELL_SIZE);
     const floor = new THREE.Mesh(floorGeo, floorMat); 
     floor.rotation.x = -Math.PI / 2; floor.position.set((mazeSize * CELL_SIZE) / 2, 0, (mazeSize * CELL_SIZE) / 2); 
-    floor.receiveShadow = true;
-    scene.add(floor);
+    floor.receiveShadow = true; scene.add(floor);
     
     if (!isForestLevel) {
         const ceil = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1 }));
@@ -240,6 +258,30 @@ function loadLevel(level, customGrid = null) {
         }
     }
 
+    // FOCOS EN EL TECHO (Como en la película)
+    if (!isForestLevel) {
+        const tubeGeo = new THREE.BoxGeometry(2, 0.1, 0.5);
+        const tubeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        for (let y = 1; y < mazeSize; y += 3) {
+            for (let x = 1; x < mazeSize; x += 3) {
+                if (maze.grid[y][x] === 1) continue;
+                const cx = x * CELL_SIZE + CELL_SIZE / 2;
+                const cz = y * CELL_SIZE + CELL_SIZE / 2;
+                
+                // El tubo visual
+                const tube = new THREE.Mesh(tubeGeo, tubeMat);
+                tube.position.set(cx, WALL_HEIGHT - 0.05, cz);
+                scene.add(tube);
+
+                // La luz real (tenue)
+                const pl = new THREE.PointLight(0xfff8d7, 2, 12);
+                pl.position.set(cx, WALL_HEIGHT - 0.5, cz);
+                scene.add(pl);
+                ceilingLights.push({ x: cx, z: cz });
+            }
+        }
+    }
+
     player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
     player.stamina = 100; player.exhausted = false;
     
@@ -251,36 +293,25 @@ function loadLevel(level, customGrid = null) {
 
     if(isHost) {
         monster = new Monster(scene, isForestLevel ? 'scarecrow' : 'smiler');
-        monster.speed = 5.0 + level * 0.4;
+        monster.speed = 4.5 + level * 0.3;
+        // Aparece más cerca
         monster.setPosition((mazeSize - 4) * CELL_SIZE, (mazeSize - 4) * CELL_SIZE);
         monster.mesh.traverse(o => { if(o.isMesh) { o.castShadow = true; } });
     }
 
-    // --- CINTAS REALISTAS (SIN BRILLO, SOLO SE VEN CON LA LINTERNA) ---
-    // Color gris oscuro, rugosidad media para que la luz rebote un poco
+    // Cintas oscuras
     const tapeMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4, metalness: 0.3 });
     for (let i = 0; i < 3; i++) {
         let tx, ty;
         do { tx = 1 + Math.floor(Math.random() * (mazeSize - 2)); ty = 1 + Math.floor(Math.random() * (mazeSize - 2)); } while (maze.grid[ty][tx] === 1 || (Math.hypot(tx, ty) < 6));
-        
-        // Creamos un pequeño grupo para que parezca un casete con una etiqueta
         const tapeGroup = new THREE.Group();
-        
         const tapeBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 1.8), tapeMat);
         tapeBox.castShadow = true;
-        
-        // Una etiqueta blanca muy pequeña para que se distinga
-        const labelMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.8 });
-        const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), labelMat);
-        label.position.y = 0.11;
-        label.rotation.x = -Math.PI / 2;
-
-        tapeGroup.add(tapeBox);
-        tapeGroup.add(label);
-
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), new THREE.MeshStandardMaterial({ color: 0xdddddd }));
+        label.position.y = 0.11; label.rotation.x = -Math.PI / 2;
+        tapeGroup.add(tapeBox); tapeGroup.add(label);
         tapeGroup.position.set(tx * CELL_SIZE + CELL_SIZE / 2, 0.5, ty * CELL_SIZE + CELL_SIZE / 2); 
         scene.add(tapeGroup);
-        
         tapes.push({ mesh: tapeGroup, taken: false });
     }
 
@@ -320,9 +351,7 @@ function init(isClient) {
 }
 
 function setupConnection() {
-    conn.on('open', () => { 
-        conn.send({ type: 'init', skin: activeSkin }); 
-    });
+    conn.on('open', () => { conn.send({ type: 'init', skin: activeSkin }); });
     conn.on('data', (data) => {
         if(data.type === 'move') {
             remoteData.x = data.x; remoteData.z = data.z; remoteData.rot = data.rot; remoteData.isHidden = data.isHidden;
@@ -336,13 +365,9 @@ function setupConnection() {
             monster.mesh.position.x = data.x; monster.mesh.position.z = data.z;
         } else if (data.type === 'tapeTaken') {
             const t = tapes[data.index]; 
-            if(t && !t.taken) { 
-                t.taken = true; 
-                scene.remove(t.mesh); 
-            }
+            if(t && !t.taken) { t.taken = true; scene.remove(t.mesh); }
         } else if (data.type === 'syncLevel' && !isHost) {
-            currentLevel = data.level; 
-            loadLevel(currentLevel, data.grid);
+            currentLevel = data.level; loadLevel(currentLevel, data.grid);
         }
     });
 }
@@ -444,11 +469,13 @@ function update(dt) {
 
     const isMoving = !player.isHidden && (moveX !== 0 || moveZ !== 0);
     let currentSpeed = WALK_SPEED;
+    let isRunningNow = false;
     
     if (keys.shift && isMoving && !player.exhausted && player.stamina > 0) {
         currentSpeed = SPRINT_SPEED;
         player.stamina = Math.max(0, player.stamina - 25 * dt);
         if (player.stamina <= 0) player.exhausted = true;
+        isRunningNow = true;
     } else {
         player.stamina = Math.min(100, player.stamina + 15 * dt);
         if (player.stamina > 30) player.exhausted = false;
@@ -469,8 +496,29 @@ function update(dt) {
         if (!collides(player.x + vx, player.z)) player.x += vx;
         if (!collides(player.x, player.z + vz)) player.z += vz;
 
+        // SONIDO DE PASOS (Más rápidos al correr)
         stepTimer += dt;
-        if (stepTimer > (keys.shift ? 0.3 : 0.5)) { stepTimer = 0; playStep(); }
+        const stepInterval = isRunningNow ? 0.28 : 0.45;
+        if (stepTimer > stepInterval) { 
+            stepTimer = 0; 
+            playStep(isRunningNow); 
+        }
+    }
+
+    // VOLUMEN DEL ZUMBIDO BASADO EN LA DISTANCIA A LOS FOCOS
+    if (audioCtx && buzzGain && ceilingLights.length > 0) {
+        let minDist = Infinity;
+        for (let l of ceilingLights) {
+            const d = Math.hypot(player.x - l.x, player.z - l.z);
+            if (d < minDist) minDist = d;
+        }
+        // Si está a menos de 10 metros, el zumbido sube
+        if (minDist < 15) {
+            const vol = Math.max(0, 1 - (minDist / 15)) * 0.4; 
+            buzzGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+        } else {
+            buzzGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+        }
     }
 
     camera.position.set(player.x, 1.7, player.z);
@@ -485,10 +533,9 @@ function update(dt) {
 
     tapes.forEach((t, i) => {
         if (!t.taken) {
-            t.mesh.rotation.y += dt * 2; // Siguen girando para que la luz de la linterna las ilumine
+            t.mesh.rotation.y += dt * 2; 
             if (Math.hypot(player.x - t.mesh.position.x, player.z - t.mesh.position.z) < 2) {
-                t.taken = true; 
-                scene.remove(t.mesh);
+                t.taken = true; scene.remove(t.mesh);
                 if(conn && conn.open) conn.send({ type: 'tapeTaken', index: i });
                 showMsg("Cinta Recuperada"); 
             }
