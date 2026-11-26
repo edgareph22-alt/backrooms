@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Backrooms Multijugador</title>
-    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
@@ -49,7 +48,22 @@
         <button class="menuBtn" onclick="showScreen('multiplayerMenu')">MULTIJUGADOR</button>
         <button class="menuBtn" onclick="showScreen('monstersMenu')">SELECCIONAR MONSTRUO</button>
         <button class="menuBtn" onclick="showScreen('skinsMenu')">TIENDA DE SKINS</button>
+        <button class="menuBtn" onclick="showScreen('settingsMenu')">CONFIGURACIÓN</button>
         <button class="menuBtn" style="background:#500; margin-top:20px;" onclick="logoutUser()">CERRAR SESIÓN</button>
+    </div>
+
+    <!-- SETTINGS MENU -->
+    <div id="settingsMenu" class="screen" style="display:none;">
+        <h2>CONFIGURACIÓN</h2>
+        <div style="margin: 20px 0;">
+            <p>Calidad Gráfica:</p>
+            <div id="quality-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+                <button id="btnLow" class="quality-btn" onclick="setQuality('LOW')">Baja</button>
+                <button id="btnMedium" class="quality-btn" onclick="setQuality('MEDIUM')">Media</button>
+                <button id="btnHigh" class="quality-btn" onclick="setQuality('HIGH')">Alta 🔒</button>
+            </div>
+        </div>
+        <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
     <!-- MONSTERS MENU -->
@@ -81,7 +95,6 @@
         <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
-    <!-- Importar módulos -->
     <script type="importmap">
         { "imports": { "three": "./three.module.js" } }
     </script>
