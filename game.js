@@ -3,7 +3,6 @@ import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
 import { getActiveSkin, getActiveMonster, addPoints } from './auth.js';
 
-// --- LEER CALIDAD GUARDADA ---
 const QUALITY = localStorage.getItem('br_quality') || 'MEDIUM';
 
 const CELL_SIZE = 10;
@@ -19,6 +18,7 @@ let keys = { w: false, a: false, s: false, d: false, shift: false };
 let tapes = [], hideSpots = [], ceilingLights = [];
 let exitPos = new THREE.Vector3();
 let isRunning = false;
+let isPaused = false;
 let playerMesh = null;
 
 let peer = null, conn = null, isHost = false, remotePlayerMesh = null;
@@ -64,12 +64,46 @@ function updateHeartbeat(isNear) {
     } else if (!isNear && heartbeatOsc) { heartbeatOsc.stop(); heartbeatOsc = null; }
 }
 
-// --- MENÚS ---
+// --- MENÚS Y PAUSA ---
 window.showScreen = function(id) {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById(id).style.display = 'flex';
 };
 window.startSinglePlayer = function() { initAudio(); isHost = true; startGame(); };
+
+window.togglePause = function() {
+    if (!isRunning) return;
+    isPaused = !isPaused;
+    
+    if (isPaused) {
+        document.getElementById('pauseMenu').style.display = 'flex';
+        document.getElementById('ui').style.display = 'none';
+        document.exitPointerLock();
+    } else {
+        document.getElementById('pauseMenu').style.display = 'none';
+        document.getElementById('ui').style.display = 'block';
+    }
+};
+
+window.exitToMenu = function() {
+    isRunning = false;
+    isPaused = false;
+    document.getElementById('pauseMenu').style.display = 'none';
+    document.getElementById('ui').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+    showScreen('mainMenu');
+    if (scene) {
+        while (scene.children.length > 0) scene.remove(scene.children[0]);
+    }
+};
+
+window.closeSettings = function() {
+    if (isRunning) {
+        showScreen('pauseMenu');
+    } else {
+        showScreen('mainMenu');
+    }
+};
 
 window.hostGame = function() {
     initAudio(); const status = document.getElementById('hostStatus'); const createBtn = document.getElementById('createRoomBtn');
@@ -105,10 +139,11 @@ window.joinGame = function() {
 function startGame() {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById('ui').style.display = 'block'; document.getElementById('controls').style.display = 'block';
+    isPaused = false;
     init(false);
 }
 
-// --- TEXTURAS DINÁMICAS ---
+// --- TEXTURAS ---
 function makeTex(kind) {
     let size = 512;
     if (QUALITY === 'MEDIUM') size = 256;
@@ -117,7 +152,7 @@ function makeTex(kind) {
     const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
     const scale = size / 512;
 
-    if (kind === 'wall1') { // Backrooms
+    if (kind === 'wall1') {
         g.fillStyle = '#b89e34'; g.fillRect(0, 0, size, size);
         g.fillStyle = 'rgba(40,30,10,0.2)'; 
         for (let i = 0; i < 40 * scale; i++) { g.beginPath(); g.arc(Math.random()*size, Math.random()*size, Math.random()*20*scale+5, 0, 7); g.fill(); }
@@ -127,20 +162,20 @@ function makeTex(kind) {
         g.fillStyle = '#6b5a2e'; g.fillRect(0, 0, size, size);
         for (let i = 0; i < 500 * scale; i++) { g.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.05)'; g.fillRect(Math.random()*size, Math.random()*size, 2*scale, 2*scale); }
     }
-    else if (kind === 'forest') { // Nivel 2 (Bosque)
+    else if (kind === 'forest') {
         g.fillStyle = '#0a1a0a'; g.fillRect(0, 0, size, size);
         for (let i = 0; i < 200 * scale; i++) {
             g.fillStyle = Math.random() > 0.5 ? '#153015' : '#0d200d';
             g.beginPath(); g.arc(Math.random()*size, Math.random()*size, Math.random()*10*scale+2, 0, 7); g.fill();
         }
     }
-    else if (kind === 'industrial') { // Nivel 3
+    else if (kind === 'industrial') {
         g.fillStyle = '#1a1a1a'; g.fillRect(0, 0, size, size);
         g.strokeStyle = '#333'; g.lineWidth = 4*scale;
         for(let i=0; i<size; i+=32*scale) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, size); g.stroke(); }
         for(let i=0; i<size; i+=32*scale) { g.beginPath(); g.moveTo(0, i); g.lineTo(size, i); g.stroke(); }
     }
-    else if (kind === 'sewer') { // Nivel 4
+    else if (kind === 'sewer') {
         g.fillStyle = '#111'; g.fillRect(0, 0, size, size);
         for (let i = 0; i < 100 * scale; i++) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(Math.random()*size, Math.random()*size, Math.random()*20*scale, 0, 7); g.fill(); }
         g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2*scale;
@@ -161,7 +196,6 @@ function collides(x, z, radius = PLAYER_RADIUS) {
     return false;
 }
 
-// --- CREACIÓN DEL PERSONAJE SEGÚN SKIN ---
 function createPlayerMesh(skinType) {
     const group = new THREE.Group();
     const skinMat = new THREE.MeshStandardMaterial({ color: 0xffccaa, roughness: 0.8 });
@@ -200,8 +234,6 @@ function loadLevel(level, customGrid = null, forcedMonster = null) {
     levelGroup = new THREE.Group(); scene.add(levelGroup);
     
     hideSpots = []; tapes = []; ceilingLights = [];
-    
-    // 0: Backrooms, 1: Bosque, 2: Industrial, 3: Alcantarilla
     let theme = (level - 1) % 4; 
 
     let bgColor = theme === 0 ? 0x110d05 : theme === 1 ? 0x050806 : theme === 2 ? 0x111111 : 0x050000;
@@ -226,7 +258,6 @@ function loadLevel(level, customGrid = null, forcedMonster = null) {
         }
     }
 
-    // TEXTURAS SEGÚN EL TEMA
     let wallTex = makeTex(theme === 1 ? 'forest' : theme === 2 ? 'industrial' : theme === 3 ? 'sewer' : 'wall1');
     let floorTex = makeTex(theme === 1 ? 'forest' : theme === 2 ? 'industrial' : theme === 3 ? 'sewer' : 'floor1');
     wallTex.repeat.set(1, 1); floorTex.repeat.set(mazeSize, mazeSize);
@@ -371,4 +402,207 @@ function setupConnection() {
     });
 }
 
-// ... (El resto de setupControls, tryHide, animate y update se mantienen exactamente igual que en el código anterior, ya que manejan el movimiento, la linterna y el multijugador correctamente)
+function setupControls() {
+    window.addEventListener('keydown', e => {
+        if (e.key === 'Escape') togglePause();
+        if (isPaused) return;
+
+        if (e.key.toLowerCase() === 'w') keys.w = true; if (e.key.toLowerCase() === 's') keys.s = true;
+        if (e.key.toLowerCase() === 'a') keys.a = true; if (e.key.toLowerCase() === 'd') keys.d = true;
+        if (e.key === 'Shift') keys.shift = true; if (e.key.toLowerCase() === 'e' || e.key === ' ') tryHide();
+    });
+    window.addEventListener('keyup', e => {
+        if (e.key.toLowerCase() === 'w') keys.w = false; if (e.key.toLowerCase() === 's') keys.s = false;
+        if (e.key.toLowerCase() === 'a') keys.a = false; if (e.key.toLowerCase() === 'd') keys.d = false;
+        if (e.key === 'Shift') keys.shift = false;
+    });
+
+    let locked = false;
+    document.getElementById('game-canvas').addEventListener('click', () => { if (!locked && isRunning && !isPaused) renderer.domElement.requestPointerLock(); });
+    document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === renderer.domElement; });
+    document.addEventListener('mousemove', e => {
+        if (!locked || !isRunning || isPaused) return;
+        camera.rotation.y -= e.movementX * 0.0021; camera.rotation.x -= e.movementY * 0.0019;
+        camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x));
+    });
+
+    const joy = document.getElementById('joy'); const joyKnob = document.getElementById('joyKnob');
+    let joyId = null, center = {x:0,y:0};
+    joy.addEventListener('touchstart', e => {
+        e.preventDefault(); if(isPaused) return; const t = e.changedTouches[0]; if (joyId !== null) return;
+        joyId = t.identifier; const r = joy.getBoundingClientRect(); center = { x: r.left + r.width/2, y: r.top + r.height/2 };
+    }, {passive:false});
+    joy.addEventListener('touchmove', e => {
+        e.preventDefault(); if(isPaused) return;
+        for (const t of e.changedTouches) {
+            if (t.identifier !== joyId) continue;
+            let dx = t.clientX - center.x, dy = t.clientY - center.y;
+            const max = 42, mag = Math.hypot(dx, dy);
+            if (mag > max) { dx = dx/mag*max; dy = dy/mag*max; }
+            joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            player.joyX = dx / max; player.joyY = dy / max;
+        }
+    }, {passive:false});
+    joy.addEventListener('touchend', e => {
+        for (const t of e.changedTouches) if (t.identifier === joyId) { joyId = null; player.joyX = 0; player.joyY = 0; joyKnob.style.transform = 'translate(-50%, -50%)'; }
+    });
+
+    let lookId = null, lastX = 0, lastY = 0;
+    renderer.domElement.addEventListener('touchstart', e => {
+        if (e.target.closest('#joy') || e.target.closest('#sprintBtn') || e.target.closest('#hideBtn') || e.target.closest('#pauseBtn')) return;
+        e.preventDefault(); if(isPaused) return; const t = e.changedTouches[0];
+        if (lookId === null) { lookId = t.identifier; lastX = t.clientX; lastY = t.clientY; }
+    }, {passive:false});
+    renderer.domElement.addEventListener('touchmove', e => {
+        e.preventDefault(); if(isPaused) return;
+        for (const t of e.changedTouches) {
+            if (t.identifier === lookId) {
+                camera.rotation.y -= (t.clientX - lastX) * 0.005; camera.rotation.x -= (t.clientY - lastY) * 0.004;
+                camera.rotation.x = Math.max(-1.15, Math.min(1.15, camera.rotation.x));
+                lastX = t.clientX; lastY = t.clientY;
+            }
+        }
+    }, {passive:false});
+    renderer.domElement.addEventListener('touchend', e => { for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null; });
+
+    document.getElementById('sprintBtn').addEventListener('touchstart', e => { e.preventDefault(); if(!isPaused) keys.shift = true; document.getElementById('sprintBtn').classList.add('active'); }, {passive:false});
+    document.getElementById('sprintBtn').addEventListener('touchend', e => { e.preventDefault(); keys.shift = false; document.getElementById('sprintBtn').classList.remove('active'); });
+    document.getElementById('hideBtn').addEventListener('touchstart', e => { e.preventDefault(); if(!isPaused) tryHide(); }, {passive:false});
+}
+
+function tryHide() {
+    if (!player.isHidden) {
+        for (const h of hideSpots) {
+            if (Math.hypot(player.x - h.x, player.z - h.z) < h.radius) {
+                player.lastX = player.x; player.lastZ = player.z; player.x = h.x; player.z = h.z; player.isHidden = true;
+                document.getElementById('locker-overlay').style.display = 'block'; return;
+            }
+        }
+    } else {
+        player.x = player.lastX; player.z = player.lastZ; player.isHidden = false;
+        document.getElementById('locker-overlay').style.display = 'none';
+    }
+}
+
+let lastTime = 0;
+function animate(time) {
+    requestAnimationFrame(animate);
+    const dt = Math.min(0.05, (time - lastTime) / 1000); lastTime = time;
+    if (isRunning && !isPaused) {
+        update(dt);
+    }
+    if(renderer && scene && camera) renderer.render(scene, camera);
+}
+
+function update(dt) {
+    let moveX = player.joyX; let moveZ = player.joyY;
+    if (keys.w) moveZ -= 1; if (keys.s) moveZ += 1; if (keys.a) moveX -= 1; if (keys.d) moveX += 1;
+    const len = Math.hypot(moveX, moveZ); if (len > 1) { moveX /= len; moveZ /= len; }
+
+    const isMoving = !player.isHidden && (moveX !== 0 || moveZ !== 0);
+    let currentSpeed = WALK_SPEED;
+    let isRunningNow = false;
+    
+    if (keys.shift && isMoving && !player.exhausted && player.stamina > 0) {
+        currentSpeed = SPRINT_SPEED;
+        player.stamina = Math.max(0, player.stamina - 25 * dt);
+        if (player.stamina <= 0) player.exhausted = true;
+        isRunningNow = true;
+    } else {
+        player.stamina = Math.min(100, player.stamina + 15 * dt);
+        if (player.stamina > 30) player.exhausted = false;
+    }
+    
+    const bat = document.getElementById('battery-fill');
+    if (bat) {
+        bat.style.width = player.stamina + '%';
+        bat.style.background = player.exhausted ? '#ff2222' : (player.isHidden ? '#44aaff' : '#fff');
+    }
+
+    if (isMoving) {
+        const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
+        const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
+        const moveDir = forward.multiplyScalar(-moveZ).add(right.multiplyScalar(moveX));
+        
+        const vx = moveDir.x * currentSpeed * dt; const vz = moveDir.z * currentSpeed * dt;
+        if (!collides(player.x + vx, player.z)) player.x += vx;
+        if (!collides(player.x, player.z + vz)) player.z += vz;
+
+        stepTimer += dt;
+        const stepInterval = isRunningNow ? 0.28 : 0.45;
+        if (stepTimer > stepInterval) { stepTimer = 0; playStep(isRunningNow); }
+    }
+
+    camera.position.set(player.x, 1.7, player.z);
+    if(playerMesh) { playerMesh.position.set(player.x, 0, player.z); playerMesh.rotation.y = camera.rotation.y; }
+
+    if (audioCtx && buzzGain && ceilingLights.length > 0) {
+        let minDist = Infinity;
+        for (let l of ceilingLights) {
+            const d = Math.hypot(player.x - l.x, player.z - l.z);
+            if (d < minDist) minDist = d;
+        }
+        if (minDist < 15) {
+            const vol = Math.max(0, 1 - (minDist / 15)) * 0.4; 
+            buzzGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+        } else {
+            buzzGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+        }
+    }
+
+    if(conn && conn.open) conn.send({ type: 'move', x: player.x, z: player.z, rot: camera.rotation.y, isHidden: player.isHidden });
+
+    if(remotePlayerMesh) {
+        remotePlayerMesh.position.lerp(new THREE.Vector3(remoteData.x, 0, remoteData.z), 0.2);
+        remotePlayerMesh.rotation.y = remoteData.rot; remotePlayerMesh.visible = !remoteData.isHidden;
+    }
+
+    tapes.forEach((t, i) => {
+        if (!t.taken) {
+            t.mesh.rotation.y += dt * 2; 
+            if (Math.hypot(player.x - t.mesh.position.x, player.z - t.mesh.position.z) < 2) {
+                t.taken = true; t.mesh.visible = false; 
+                if(conn && conn.open) conn.send({ type: 'tapeTaken', index: i });
+                showMsg("Cinta Recuperada"); 
+            }
+        }
+    });
+
+    if (isHost && tapes.every(t => t.taken) && Math.hypot(player.x - exitPos.x, player.z - exitPos.z) < 3) {
+        currentLevel++;
+        addPoints(50); 
+        loadLevel(currentLevel);
+        if(conn && conn.open) conn.send({ type: 'syncLevel', level: currentLevel, grid: maze.grid, monster: getActiveMonster() });
+    }
+
+    if(isHost && monster) {
+        monster.update(dt, camera.position, new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0)), maze, player.isHidden);
+        if(conn && conn.open) conn.send({ type: 'monsterSync', x: monster.mesh.position.x, z: monster.mesh.position.z });
+        
+        if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
+            player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
+            document.getElementById('locker-overlay').style.display = 'none';
+        }
+    } else if (!isHost && monster) {
+        if (Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z) < 1.8 && !player.isHidden) {
+            player.x = CELL_SIZE * 1.5; player.z = CELL_SIZE * 1.5; player.isHidden = false;
+            document.getElementById('locker-overlay').style.display = 'none';
+        }
+    }
+
+    if(monster) {
+        const distM = Math.hypot(player.x - monster.mesh.position.x, player.z - monster.mesh.position.z);
+        updateHeartbeat(distM < 12 && !player.isHidden); 
+    }
+}
+
+function showMsg(txt) {
+    const m = document.getElementById('msg'); 
+    if(m) { m.textContent = txt; m.classList.add('show'); setTimeout(() => m.classList.remove('show'), 2000); }
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight; 
+    camera.updateProjectionMatrix(); 
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
