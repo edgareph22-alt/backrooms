@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MazeGenerator } from './maze.js';
 import { Monster } from './entity.js';
-import { getActiveSkin, getActiveMonster, addPoints, currentUser } from './auth.js';
+import { getActiveSkin, getActiveMonster, addPoints } from './auth.js';
 
 const CELL_SIZE = 10;
 const WALL_HEIGHT = 5;
@@ -202,7 +202,8 @@ function loadLevel(level, customGrid = null, forcedMonster = null) {
     playerMesh = new THREE.Group();
     const bodyColor = getActiveSkin() === 'red' ? 0xff0000 : getActiveSkin() === 'green' ? 0x00ff00 : getActiveSkin() === 'gold' ? 0xffd700 : 0x0000ff;
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 8), new THREE.MeshStandardMaterial({color: bodyColor}));
-    body.position.y = 1; body.castShadow = true;
+    body.position.y = 1; 
+    body.castShadow = false; // Evitar que el jugador proyecte sombra sobre sí mismo
     playerMesh.add(body); scene.add(playerMesh);
 
     if(isHost) {
@@ -249,12 +250,17 @@ function init(isClient) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 
+    // --- CONFIGURACIÓN DE LA LINTERNA (ARREGLO DE LA SOMBRA) ---
     flashlight = new THREE.SpotLight(0xfff4d8, 100, 50, Math.PI / 4, 0.5, 1.5); 
     flashlight.castShadow = true;
     flashlight.shadow.mapSize.width = 1024; 
     flashlight.shadow.mapSize.height = 1024;
-    flashlight.shadow.bias = -0.0005; 
-    flashlight.shadow.normalBias = 0.02;
+    
+    // ESTOS SON LOS ARREGLOS CLAVE PARA LA SOMBRA PEGADA:
+    flashlight.shadow.bias = -0.002; 
+    flashlight.shadow.normalBias = 0.05;
+    flashlight.shadow.camera.near = 1.0; // Evita que la sombra se calcule a ras de la cámara
+    
     flashlight.position.set(0.2, -0.1, 0); 
     flashlight.target.position.set(0, 0, -1); 
     camera.add(flashlight); camera.add(flashlight.target);
@@ -269,8 +275,16 @@ function init(isClient) {
         loadLevel(currentLevel); 
     }
     
-    setupControls(); window.addEventListener('resize', onWindowResize);
-    isRunning = true; animate(performance.now());
+    setupControls(); 
+    
+    // --- ARREGLO PARA GIRAR EL CELULAR ---
+    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(onWindowResize, 200); // Esperar a que iOS termine de girar
+    });
+
+    isRunning = true; 
+    animate(performance.now());
 }
 
 function setupConnection() {
@@ -492,5 +506,7 @@ function showMsg(txt) {
 }
 
 function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight; 
+    camera.updateProjectionMatrix(); 
+    renderer.setSize(window.innerWidth, window.innerHeight);
 }
