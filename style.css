@@ -2,13 +2,11 @@
 body { overflow: hidden; background: #000; color: #fff; touch-action: none; }
 canvas { display: block; width: 100vw; height: 100vh; }
 
-/* Filtros VHS y Viñetas */
-#vhs-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 5; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.12) 50%); background-size: 100% 3px; opacity: 0.6; }
-#vignette { position: fixed; inset: 0; pointer-events: none; z-index: 6; background: radial-gradient(circle, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%); }
-#red-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 7; background: radial-gradient(circle, rgba(0,0,0,0) 50%, rgba(255,0,0,0.6) 100%); opacity: 0; transition: opacity 0.1s; }
-#locker-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; background: linear-gradient(to right, rgba(20,20,20,0.95) 0%, rgba(20,20,20,0.95) 12%, transparent 12%, transparent 88%, rgba(20,20,20,0.95) 88%, rgba(20,20,20,0.95) 100%), repeating-linear-gradient(to bottom, rgba(15,15,15,0.95) 0px, rgba(15,15,15,0.95) 35px, transparent 35px, transparent 50px); box-shadow: inset 0 0 150px rgba(0,0,0,1); }
+#vhs-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 5; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%); background-size: 100% 3px; opacity: 0.6; }
+#vignette { position: fixed; inset: 0; pointer-events: none; z-index: 6; background: radial-gradient(circle, rgba(0,0,0,0) 55%, rgba(0,0,0,0.7) 100%); }
+#red-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 7; background: radial-gradient(circle, rgba(0,0,0,0) 50%, rgba(255,0,0,0.7) 100%); opacity: 0; transition: opacity 0.1s; }
+#locker-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; background: repeating-linear-gradient(to bottom, rgba(15,15,15,0.95) 0px, rgba(15,15,15,0.95) 35px, transparent 35px, transparent 50px); box-shadow: inset 0 0 150px rgba(0,0,0,1); }
 
-/* UI */
 #ui { position: fixed; inset: 0; pointer-events: none; font-weight: bold; text-shadow: 0 2px 4px #000; z-index: 10; }
 #rec-ui { position: absolute; top: 20px; left: 30px; display: flex; align-items: center; font-size: 16px; }
 .rec-dot { width: 12px; height: 12px; background: #ff0000; border-radius: 50%; margin-right: 10px; animation: blink 1s infinite; }
@@ -20,7 +18,6 @@ canvas { display: block; width: 100vw; height: 100vh; }
 #msg { position: absolute; top: 25%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 10px 20px; text-align: center; opacity: 0; transition: opacity 0.3s; border-left: 3px solid #ff0000; }
 #msg.show { opacity: 1; }
 
-/* Controles táctiles */
 #controls { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
 #joy { position: absolute; left: 30px; bottom: 40px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); pointer-events: auto; touch-action: none; }
 #joyKnob { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.5); }
@@ -29,13 +26,13 @@ canvas { display: block; width: 100vw; height: 100vh; }
 #sprintBtn { background: rgba(255,0,0,0.2); border: 2px solid rgba(255,0,0,0.6); }
 #hideBtn { background: rgba(0,150,255,0.2); border: 2px solid rgba(0,150,255,0.6); }
 
-/* Menús */
-.screen { position: fixed; inset: 0; background: rgba(5,5,5,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; z-index: 50; }
+.screen { position: fixed; inset: 0; background: rgba(5,5,5,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; z-index: 50; overflow-y: auto; }
 .screen h1 { font-size: 32px; color: #ff0000; margin-bottom: 20px; letter-spacing: 4px; }
 .screen h2 { font-size: 24px; color: #ffd23f; margin-bottom: 20px; }
 .menuBtn { background: transparent; color: #fff; border: 2px solid #fff; padding: 12px 30px; font-size: 16px; margin: 10px; cursor: pointer; width: 250px; transition: 0.2s; }
 .menuBtn:hover { background: #fff; color: #000; }
-input[type="text"] { padding: 10px; font-size: 20px; text-align: center; width: 150px; margin: 10px; background: #222; color: #fff; border: 2px solid #fff; }
-.skin-container { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
-.skin-card { background: #222; padding: 20px; border-radius: 10px; border: 1px solid #444; width: 120px; }
-.skin-card button { margin-top: 10px; padding: 5px 10px; background: #ffd23f; border: none; cursor: pointer; font-weight: bold; }
+input[type="text"], input[type="password"] { padding: 10px; font-size: 20px; text-align: center; width: 250px; margin: 10px; background: #222; color: #fff; border: 2px solid #fff; }
+
+.skin-container { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; max-width: 800px; margin-top: 10px; }
+.skin-card { background: #222; padding: 15px; border-radius: 10px; border: 1px solid #444; width: 140px; text-align: center; }
+.skin-card button { margin-top: 10px; padding: 5px 10px; background: #ffd23f; border: none; cursor: pointer; font-weight: bold; width: 100%; }
