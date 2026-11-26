@@ -4,10 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#000000">
-    <title>Backrooms - Multijugador</title>
+    <title>Backrooms Multijugador</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Cargamos PeerJS para el multijugador -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
@@ -19,6 +17,7 @@
 
     <div id="ui" style="display: none;">
         <div id="rec-ui"><div class="rec-dot"></div> REC</div>
+        <div id="user-display" style="position:absolute; top:20px; left:120px; font-size:14px; color:#0f0;"></div>
         <div id="battery-ui">BAT <div id="battery"><div id="battery-fill"></div></div></div>
         <div id="level-ui">NIVEL 1</div>
         <div id="msg"></div>
@@ -32,61 +31,60 @@
         </div>
     </div>
 
-    <!-- MENÚ PRINCIPAL -->
-    <div id="mainMenu" class="screen">
+    <!-- LOGIN SCREEN -->
+    <div id="loginScreen" class="screen">
         <h1>MINI MINI.EXE</h1>
+        <input type="text" id="username" placeholder="USUARIO" maxlength="12">
+        <input type="password" id="password" placeholder="CONTRASEÑA" maxlength="12">
+        <button class="menuBtn" onclick="loginUser()">INICIAR SESIÓN</button>
+        <button class="menuBtn" onclick="registerUser()">REGISTRARSE</button>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="mainMenu" class="screen" style="display:none;">
+        <h1>MENÚ PRINCIPAL</h1>
         <p id="userPoints">Puntos: <span id="pointsVal">0</span></p>
         <button class="menuBtn" onclick="startSinglePlayer()">JUGAR SOLO</button>
         <button class="menuBtn" onclick="showScreen('multiplayerMenu')">MULTIJUGADOR</button>
+        <button class="menuBtn" onclick="showScreen('monstersMenu')">SELECCIONAR MONSTRUO</button>
         <button class="menuBtn" onclick="showScreen('skinsMenu')">TIENDA DE SKINS</button>
-        <button class="menuBtn" onclick="showScreen('settingsMenu')">CONFIGURACIÓN</button>
+        <button class="menuBtn" style="background:#500; margin-top:20px;" onclick="logoutUser()">CERRAR SESIÓN</button>
     </div>
 
-    <!-- MULTIJUGADOR -->
+    <!-- MONSTERS MENU -->
+    <div id="monstersMenu" class="screen" style="display:none;">
+        <h2>SELECCIONA TU PESADILLA</h2>
+        <div class="skin-container" id="monsterList"></div>
+        <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
+    </div>
+
+    <!-- MULTIPLAYER MENU -->
     <div id="multiplayerMenu" class="screen" style="display:none;">
         <h2>MULTIJUGADOR</h2>
-        <div id="hostSection">
-            <button class="menuBtn" id="createRoomBtn" onclick="hostGame()">CREAR SALA</button>
-            <p id="hostStatus" style="color:#ffd23f; margin-top:10px; display:none;">Conectando al servidor...</p>
-            <div id="hostCodeContainer" style="display:none; margin: 20px 0; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;">
-                <p>Pásale este código a tus amigos:</p>
-                <h1 id="hostCodeDisplay" style="color: #ffd23f; font-size: 40px; letter-spacing: 5px;">----</h1>
-                <button class="menuBtn" style="background: #00ff55; color: #000; margin-top: 15px;" onclick="startHostGame()">EMPEZAR JUEGO</button>
-            </div>
+        <button class="menuBtn" onclick="hostGame()">CREAR SALA</button>
+        <div id="hostCodeContainer" style="display:none; margin: 20px 0; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;">
+            <p>Código:</p>
+            <h1 id="hostCodeDisplay" style="color: #ffd23f; font-size: 40px;">----</h1>
+            <button class="menuBtn" style="background: #00ff55; color: #000;" onclick="startHostGame()">EMPEZAR JUEGO</button>
         </div>
-        <hr style="width: 80%; border-color: #333; margin: 20px 0;">
-        <div id="clientSection">
-            <p>O únete a una:</p>
-            <input type="text" id="joinCodeInput" placeholder="CÓDIGO" maxlength="4" style="text-transform: uppercase;">
-            <button class="menuBtn" onclick="joinGame()">UNIRSE</button>
-        </div>
-        <button class="menuBtn" style="background: transparent; border: none; color: #aaa; margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
+        <p>O únete:</p>
+        <input type="text" id="joinCodeInput" placeholder="CÓDIGO" maxlength="4" style="text-transform: uppercase;">
+        <button class="menuBtn" onclick="joinGame()">UNIRSE</button>
+        <button class="menuBtn" style="background: transparent; border: none; color: #aaa;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
-    <!-- SKINS -->
+    <!-- SKINS MENU -->
     <div id="skinsMenu" class="screen" style="display:none;">
         <h2>TIENDA DE SKINS</h2>
-        <div class="skin-container">
-            <div class="skin-card"><div style="width:50px; height:50px; background:blue; border-radius:50%; margin:0 auto 10px;"></div><p>Azul (Gratis)</p><button onclick="buySkin('blue', 0)">EQUIPAR</button></div>
-            <div class="skin-card"><div style="width:50px; height:50px; background:red; border-radius:50%; margin:0 auto 10px;"></div><p>Rojo (100 pts)</p><button onclick="buySkin('red', 100)">COMPRAR</button></div>
-            <div class="skin-card"><div style="width:50px; height:50px; background:green; border-radius:50%; margin:0 auto 10px;"></div><p>Verde (250 pts)</p><button onclick="buySkin('green', 250)">COMPRAR</button></div>
-        </div>
+        <div class="skin-container" id="skinsList"></div>
         <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
     </div>
 
-    <!-- CONFIGURACIÓN -->
-    <div id="settingsMenu" class="screen" style="display:none;">
-        <h2>CONFIGURACIÓN</h2>
-        <label>Sensibilidad de Cámara:</label>
-        <input type="range" id="sensitivity" min="1" max="10" value="5" style="width: 80%; margin: 15px 0;">
-        <button class="menuBtn" onclick="saveSettings()">GUARDAR</button>
-        <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
-    </div>
-
-    <!-- Usamos el three.module.js local para que funcione OFFLINE -->
+    <!-- Importar módulos -->
     <script type="importmap">
         { "imports": { "three": "./three.module.js" } }
     </script>
     <script type="module" src="game.js"></script>
+    <script type="module" src="auth.js"></script>
 </body>
 </html>
