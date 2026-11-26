@@ -24,7 +24,8 @@ window.registerUser = function() {
     const users = JSON.parse(localStorage.getItem('br_users') || '{}');
     if (users[user]) return alert("El usuario ya existe.");
 
-    users[user] = { password: pass, points: 0, skins: ["blue"], monsters: ["balloon", "cat"] };
+    // Al registrarse, obtienen los gratis por defecto
+    users[user] = { password: pass, points: 0, skins: ["blue"], activeSkin: "blue", monsters: ["balloon", "cat"], activeMonster: "balloon" };
     localStorage.setItem('br_users', JSON.stringify(users));
     alert("Registrado con éxito. Iniciando sesión...");
     window.loginUser();
@@ -47,12 +48,11 @@ function loadUserData() {
     document.getElementById('pointsVal').innerText = data.points;
     document.getElementById('user-display').innerText = "User: " + currentUser;
     
-    // Renderizar tiendas
     renderMonsterShop(data);
     renderSkinShop(data);
 }
 
-// Auto login si ya hay sesión
+// Auto login
 window.addEventListener('load', () => {
     const session = localStorage.getItem('br_session');
     if (session) {
@@ -68,32 +68,40 @@ window.addEventListener('load', () => {
     }
 });
 
-// --- TIENDAS ---
+// --- MONSTRUOS CON ICONOS ---
 const MONSTERS = {
-    balloon: { name: "Globo Feliz", cost: 0 },
-    cat: { name: "Gato Frágil", cost: 0 },
-    smiler: { name: "Sonriente", cost: 100 },
-    skinny: { name: "Demacrado", cost: 200 },
-    dj: { name: "Alien DJ", cost: 300 },
-    berserker: { name: "El Mutante", cost: 400 },
-    barista: { name: "Barista Café", cost: 500 },
-    cloak: { name: "El Caminante", cost: 600 },
-    slender: { name: "Slender", cost: 800 }
+    balloon: { name: "Globo Feliz", cost: 0, icon: "🎈" },
+    cat: { name: "Gato Frágil", cost: 0, icon: "🐈" },
+    smiler: { name: "Sonriente", cost: 100, icon: "😁" },
+    skinny: { name: "Demacrado", cost: 200, icon: "👽" },
+    dj: { name: "Alien DJ", cost: 300, icon: "🎧" },
+    berserker: { name: "El Mutante", cost: 400, icon: "🧟" },
+    barista: { name: "Barista Café", cost: 500, icon: "🍄" },
+    cloak: { name: "El Caminante", cost: 600, icon: "👻" },
+    slender: { name: "Slender", cost: 800, icon: "🕴️" }
 };
 
 function renderMonsterShop(data) {
     const list = document.getElementById('monsterList'); list.innerHTML = '';
     for (const [key, info] of Object.entries(MONSTERS)) {
         const card = document.createElement('div'); card.className = 'skin-card';
-        card.innerHTML = `<p>${info.name}</p>`;
-        const btn = document.createElement('button');
         
-        if (data.monsters.includes(key)) {
-            btn.innerText = data.activeMonster === key ? 'EQUIPADO' : 'EQUIPAR';
-            btn.style.background = data.activeMonster === key ? '#44ff44' : '#ffd23f';
+        let equippedText = data.activeMonster === key ? '✅ EQUIPADO' : 'EQUIPAR';
+        let btnBg = data.activeMonster === key ? '#44ff44' : '#ffd23f';
+        let btnText = ownedMonsters(data, key) ? equippedText : `COMPRAR (${info.cost} pts)`;
+
+        card.innerHTML = `
+            <div class="card-icon">${info.icon}</div>
+            <p>${info.name}</p>
+        `;
+        
+        const btn = document.createElement('button');
+        btn.innerText = btnText;
+        
+        if (ownedMonsters(data, key)) {
+            btn.style.background = btnBg;
             btn.onclick = () => { data.activeMonster = key; saveData(data); renderMonsterShop(data); };
         } else {
-            btn.innerText = `COMPRAR (${info.cost} pts)`;
             btn.onclick = () => {
                 if (data.points >= info.cost) {
                     data.points -= info.cost;
@@ -109,6 +117,11 @@ function renderMonsterShop(data) {
     }
 }
 
+function ownedMonsters(data, key) {
+    return data.monsters.includes(key);
+}
+
+// --- SKINS CON ICONOS ---
 const SKINS = {
     blue: { name: "Azul", color: "#0000ff", cost: 0 },
     red: { name: "Rojo", color: "#ff0000", cost: 100 },
@@ -120,15 +133,26 @@ function renderSkinShop(data) {
     const list = document.getElementById('skinsList'); list.innerHTML = '';
     for (const [key, info] of Object.entries(SKINS)) {
         const card = document.createElement('div'); card.className = 'skin-card';
-        card.innerHTML = `<div style="width:40px; height:40px; background:${info.color}; border-radius:50%; margin:0 auto 10px;"></div><p>${info.name}</p>`;
-        const btn = document.createElement('button');
         
-        if (data.skins.includes(key)) {
-            btn.innerText = data.activeSkin === key ? 'EQUIPADO' : 'EQUIPAR';
-            btn.style.background = data.activeSkin === key ? '#44ff44' : '#ffd23f';
+        let equippedText = data.activeSkin === key ? '✅ EQUIPADO' : 'EQUIPAR';
+        let btnBg = data.activeSkin === key ? '#44ff44' : '#ffd23f';
+        let btnText = ownedSkins(data, key) ? equippedText : `COMPRAR (${info.cost} pts)`;
+
+        // Dibujamos un círculo del color de la skin con brillo
+        card.innerHTML = `
+            <div class="card-icon">
+                <div class="skin-color-circle" style="background: ${info.color}; box-shadow: 0 0 15px ${info.color};"></div>
+            </div>
+            <p>${info.name}</p>
+        `;
+        
+        const btn = document.createElement('button');
+        btn.innerText = btnText;
+        
+        if (ownedSkins(data, key)) {
+            btn.style.background = btnBg;
             btn.onclick = () => { data.activeSkin = key; saveData(data); renderSkinShop(data); };
         } else {
-            btn.innerText = `COMPRAR (${info.cost} pts)`;
             btn.onclick = () => {
                 if (data.points >= info.cost) {
                     data.points -= info.cost;
@@ -142,6 +166,10 @@ function renderSkinShop(data) {
         }
         card.appendChild(btn); list.appendChild(card);
     }
+}
+
+function ownedSkins(data, key) {
+    return data.skins.includes(key);
 }
 
 function saveData(data) {
@@ -167,5 +195,6 @@ export function addPoints(amount) {
     const users = JSON.parse(localStorage.getItem('br_users'));
     users[currentUser].points += amount;
     localStorage.setItem('br_users', JSON.stringify(users));
-    document.getElementById('pointsVal').innerText = users[currentUser].points;
+    const pointsElement = document.getElementById('pointsVal');
+    if (pointsElement) pointsElement.innerText = users[currentUser].points;
 }
