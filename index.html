@@ -21,6 +21,7 @@
         <div id="battery-ui">BAT <div id="battery"><div id="battery-fill"></div></div></div>
         <div id="level-ui">NIVEL 1</div>
         <div id="msg"></div>
+        <div id="pauseBtn" onclick="togglePause()">II</div>
     </div>
 
     <div id="controls" style="display: none;">
@@ -52,6 +53,14 @@
         <button class="menuBtn" style="background:#500; margin-top:20px;" onclick="logoutUser()">CERRAR SESIÓN</button>
     </div>
 
+    <!-- PAUSE MENU -->
+    <div id="pauseMenu" class="screen" style="display:none; background: rgba(0,0,0,0.85);">
+        <h2>PAUSA</h2>
+        <button class="menuBtn" onclick="togglePause()">REANUDAR</button>
+        <button class="menuBtn" onclick="showScreen('settingsMenu')">AJUSTES</button>
+        <button class="menuBtn" style="background:#500;" onclick="exitToMenu()">SALIR AL MENÚ</button>
+    </div>
+
     <!-- SETTINGS MENU -->
     <div id="settingsMenu" class="screen" style="display:none;">
         <h2>CONFIGURACIÓN</h2>
@@ -63,7 +72,7 @@
                 <button id="btnHigh" class="quality-btn" onclick="setQuality('HIGH')">Alta 🔒</button>
             </div>
         </div>
-        <button class="menuBtn" style="margin-top: 20px;" onclick="showScreen('mainMenu')">VOLVER</button>
+        <button class="menuBtn" style="margin-top: 20px;" onclick="closeSettings()">VOLVER</button>
     </div>
 
     <!-- MONSTERS MENU -->
